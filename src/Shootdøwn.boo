@@ -71,7 +71,7 @@ abstract class API():
 	[Extension]	static def CloseHandle(hObject as IntPtr) as bool:
 		pass
 	[DllImport("psapi.dll", CharSet: CharSet.Unicode)]
-	[Extension]	static def GetProcessImageFileName(hProcess as IntPtr, lpBaseName as StringBuilder, nSize as int) as uint:
+	[Extension]	static def GetProcessImageFileName(hProc as IntPtr, lpName as StringBuilder, nSize as int) as uint:
 		pass
 # -------------------- #
 abstract class Δ(API):
