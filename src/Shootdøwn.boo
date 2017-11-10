@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdown windows destroyer v0.015
+# Shootdown windows destroyer v0.02
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -9,6 +9,7 @@ import System.Linq
 import System.Media
 import System.Drawing
 import System.Windows.Forms
+import System.Collections.Specialized
 import System.Runtime.InteropServices
 import System.Runtime.CompilerServices
 
@@ -71,7 +72,8 @@ abstract class API():
 	[Extension]	static def CloseHandle(hObject as IntPtr) as bool:
 		pass
 	[DllImport("psapi.dll", CharSet: CharSet.Unicode)]
-	[Extension]	static def GetProcessImageFileName(hProc as IntPtr, lpName as StringBuilder, nSize as int) as uint:
+	[Extension]	static def GetModuleFileNameEx(hProc as IntPtr, hMod as IntPtr, lpName as StringBuilder, 
+		nSize as int) as uint:
 		pass
 # -------------------- #
 abstract class Δ(API):
@@ -97,6 +99,15 @@ abstract class Δ(API):
 		if asm.IsDynamic: return IO.File.OpenRead(id)
 		else: return asm.GetManifestResourceStream(id)
 
+	[Extension] static def cycle(dict as OrderedDictionary, max as int):
+		while dict.Count > max: dict.RemoveAt(0)
+		return dict
+
+	[Extension] static def upcount(dict as OrderedDictionary, key as string):
+		if dict.Contains(key): dict[key] = dict[key] cast int + 1
+		else: dict.Add(key, 1)
+		return dict
+
 	# Additional service class.
 	class WM_Receiver(Form):
 		event WM as callable(Message)
@@ -108,10 +119,12 @@ abstract class Δ(API):
 # -------------------- #
 class Shooter(Δ):
 	public muffled		= false
+	public max_necro	= 10
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
 	final timer			= Timers.Timer(Enabled: true, AutoReset: true, Interval: 500, Elapsed: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|activate() if e.Msg == 0x0312})
 	final bang			= SoundPlayer("shoot.wav".find_res())
+	final necrologue	= OrderedDictionary(max_necro)
 	public final locker	= "!$name!".try_lock()
 	struct stat():
 		static startup	= DateTime.Now
@@ -129,7 +142,7 @@ class Shooter(Δ):
 		return self
 
 	private def setup_menu():
-		# -Auxilary procedure.		
+		# -Auxilary procedures.
 		def grep_targets():
 			cache = List[of MenuItem]()
 			for win in scan_around():
@@ -137,24 +150,35 @@ class Shooter(Δ):
 				cache.Add(MenuItem(
 					"$owner:: "+(naming != '').either('<nil_title>', naming), {activate(win)}
 					))
-			return cache.GroupBy({x|x.Text}).Select({y|y.First()})
+			return cache.GroupBy({x|x.Text}).Select({y|y.First()}).ToArray()
+		def grep_necro():
+			cache = List[of MenuItem]()
+			for mortem as Collections.DictionaryEntry in necrologue:
+				kill_count as int, path = mortem.Value, mortem.Key
+				cache.Add(MenuItem(
+					(kill_count > 1).either("", "「💀: $(kill_count)」 ") + path,
+					{shell("explorer", "/select,\"$path\"")}
+					))
+			return cache.ToArray()
 		# -Main code.
 		items = icon.ContextMenu.MenuItems
 		items.Clear()
 		items.Add("About...", {join((
-			"$name v0.015", "*" * 19,
+			"$name v0.02", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
-			"Process destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
-		items.Add("Targets", {0}).MenuItems.AddRange(grep_targets().ToArray())
-		items.Add("-", {0})
+			"Processess destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
 		items.Add("Muffle sounds", {muffled=(not muffled)}).Checked = muffled
-		items.Add("-", {0})
+		items.Add("-")
+		if len(_ = grep_targets()):	items.Add("Targets").MenuItems.AddRange(_)
+		else:						items.Add("No targets").Enabled = false
+		if necrologue.Count: items.Add("Tombstones").MenuItems.AddRange(grep_necro())
+		items.Add("-")
 		items.Add("Terminate", {destroy})
 		return self
 
 	def activate(victim as IntPtr):
 		bang.Play() unless muffled
-		victim.zoom().shoot()
+		necrologue.upcount(victim.zoom().shoot()).cycle(max_necro)
 		stat.victims++
 		return update()
 
@@ -177,9 +201,9 @@ class Shooter(Δ):
 		return result.ToString()
 
 	[Extension] static def locate(proc_handle as IntPtr):
-		proc_handle	= ProcessAccess.All.OpenProcess(true, proc_handle)
+		proc_handle	= ProcessAccess.QueryInformation.OpenProcess(true, proc_handle)
 		result		= StringBuilder(max = 4096)
-		max			= proc_handle.GetProcessImageFileName(result, max)
+		max			= proc_handle.GetModuleFileNameEx(IntPtr.Zero, result, max)
 		proc_handle.CloseHandle()
 		return result.ToString()
 
