@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdown windows destroyer v0.02
+# Shootdøwn windows destroyer v0.03
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -38,6 +38,15 @@ abstract class API():
 		QueryLimitedInformation	= 0x00001000
 		Synchronize				= 0x00100000
 
+	enum GWL:
+     	WndProc		= -4
+     	hInstance	= -6
+     	hWndParent	= -8
+     	Style		= -16
+     	ExStyle		= -20
+     	UserData	= -21
+     	ID			= -12
+
 	[StructLayout(LayoutKind.Sequential)] public struct POINT:
 		public X as int
 		public Y as int
@@ -49,6 +58,9 @@ abstract class API():
 	# --Import table goes here:
 	[DllImport("user32.dll")]
 	[Extension]	static def RegisterHotKey(hWnd as IntPtr, id as int, fsModifiers as int, vk as Keys) as bool:
+		pass
+	[DllImport("user32.dll")]
+	[Extension] static def GetKeyState(vk as Keys) as short:
 		pass
 	[DllImport("user32.dll")]
 	[Extension]	static def GetWindowThreadProcessId(hWnd as IntPtr, ref ProcessId as IntPtr) as IntPtr:
@@ -65,11 +77,25 @@ abstract class API():
 	[DllImport("user32.dll", CharSet: CharSet.Unicode)]
 	[Extension]	static def GetWindowText(hWnd as IntPtr, lpString as StringBuilder, nMaxCount as int) as int:
 		pass
+	[DllImport("user32.dll")]
+	[Extension]	static def GetWindowLong(hWnd as IntPtr, nIndex as GWL) as int:
+		pass
+	[DllImport("user32.dll")]
+	[Extension]	static def SetWindowLong(hWnd as IntPtr, nIndex as GWL, dwNewLong as int) as int:
+		pass
+	[DllImport("user32.dll")]
+	[Extension]	static def SetLayeredWindowAttributes(hWnd as IntPtr, crKey as int, alpha as byte, 
+		dwFlags as int) as bool:
+		pass
 	[DllImport("kernel32.dll")]
 	[Extension]	static def OpenProcess(Access as ProcessAccess, bInheritHnd as bool, Id as IntPtr) as IntPtr:
 		pass
 	[DllImport("kernel32.dll")]
 	[Extension]	static def CloseHandle(hObject as IntPtr) as bool:
+		pass
+	[DllImport("kernel32.dll", CharSet: CharSet.Unicode)]
+	[Extension]	static def QueryFullProcessImageName(hProc as IntPtr, dwFlags as int, lpName as StringBuilder,
+		ref lpdwSize as int) as bool:
 		pass
 	[DllImport("psapi.dll", CharSet: CharSet.Unicode)]
 	[Extension]	static def GetModuleFileNameEx(hProc as IntPtr, hMod as IntPtr, lpName as StringBuilder, 
@@ -80,6 +106,7 @@ abstract class Δ(API):
 	protected static final name			= "Shootdøwn"
 	public static final title			= "💀|$name|💀"
 	public static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+	static final PostXP					= Environment.OSVersion.Version.Major >= 6
 
 	# --Methods goes here.
 	[Extension] static def either[of T](val as bool, false_val as T, true_val as T):
@@ -108,7 +135,10 @@ abstract class Δ(API):
 		else: dict.Add(key, 1)
 		return dict
 
-	# Additional service class.
+	[Extension] static def pressed(key as Keys):
+		return (key.GetKeyState() & 0x10000000)
+
+	# -- Additional service class.
 	class WM_Receiver(Form):
 		event WM as callable(Message)
 		protected def SetVisibleCore(value as bool):
@@ -117,14 +147,53 @@ abstract class Δ(API):
 			WM(msg)
 			super.WndProc(msg)
 # -------------------- #
+class InspectorWin(Form):
+	final host as Shooter
+	final info = Collections.Generic.Dictionary[of string, Label]()
+	final flow = FlowLayoutPanel(FlowDirection: FlowDirection.TopDown, AutoSize: true, Size: Size(0, 0),
+			Margin: Padding(0, 0, 0, 0))
+
+	def constructor(base as Shooter):
+		# Primary setup operations.
+		host									= base
+		TopMost, ShowInTaskbar, AutoSizeMode	= true, false,  AutoSizeMode.GrowAndShrink
+		ControlBox, Text, FormBorderStyle		= false, "", FormBorderStyle.FixedSingle
+		Size, AutoSize, BackColor				= Size(0, 0), true, Color.FromArgb(30, 30, 30)
+		# Controls setup.
+		Controls.Add(flow)
+		for label, id in (("●「proc」:", "path"), ("●「win」:", "win"),  ("●「pid」:", "pid")):
+			flow.Controls.Add(line = FlowLayoutPanel(FlowDirection: FlowDirection.LeftToRight, AutoSize: true,
+				Margin: Padding(0, 0, 0, 0)))
+			line.Controls.Add(T=Label(Text: label, ForeColor: Color.Cyan, AutoSize: true))
+			info[id] = Label(ForeColor: Color.Coral, AutoSize: true, Size: Size(0, 0))
+			line.Controls.Add(info[id])
+		# API styling setup.
+		style = API.GetWindowLong(Handle, API.GWL.ExStyle) | 0x80000 | 0x20
+		API.SetWindowLong(Handle, API.GWL.ExStyle, style)
+		API.SetLayeredWindowAttributes(Handle, 0, 245, 0x2)
+
+	def update() as InspectorWin:
+		Location			= Cursor.Position
+		summary				= host.Report(IntPtr.Zero)
+		info['path'].Text	= summary.path
+		info['win'].Text	= host.target.ToString()
+		info['pid'].Text	= summary.pid.ToString()
+		flow.Location		= Point((Height - flow.Height) / 2 + 1, (Width - flow.Width) / 2 + 1)
+		return self
+
+	checkout:
+		get: return join(info.Values.Select({x|x.Text}), '\n')
+# -------------------- #
 class Shooter(Δ):
 	public muffled		= false
+	public alt_shift	= false
 	public max_necro	= 10
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
-	final timer			= Timers.Timer(Enabled: true, AutoReset: true, Interval: 500, Elapsed: {update})
+	final timer			= Timer(Enabled: true, Interval: 100, Tick: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|activate() if e.Msg == 0x0312})
 	final bang			= SoundPlayer("shoot.wav".find_res())
 	final necrologue	= OrderedDictionary(max_necro)
+	final analyzer		= InspectorWin(self)
 	public final locker	= "!$name!".try_lock()
 	struct stat():
 		static startup	= DateTime.Now
@@ -139,6 +208,10 @@ class Shooter(Δ):
 
 	def update() as Shooter:
 		icon.Text = "$name 「💀: $(stat.victims)」"
+		if alt_shift and Keys.Menu.pressed() and Keys.ShiftKey.pressed():
+			analyzer.update().Show()
+			if Keys.Insert.GetKeyState() & 1: Clipboard.SetText(analyzer.checkout)
+		else: analyzer.Hide()
 		return self
 
 	private def setup_menu():
@@ -164,10 +237,11 @@ class Shooter(Δ):
 		items = icon.ContextMenu.MenuItems
 		items.Clear()
 		items.Add("About...", {join((
-			"$name v0.02", "*" * 19,
+			"$name v0.03", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
-		items.Add("Muffle sounds", {muffled=(not muffled)}).Checked = muffled
+		items.Add("Muffle sounds",			{muffled=(not muffled)}).Checked = muffled
+		items.Add("Inspect on alt+shift",	{alt_shift=(not alt_shift)}).Checked = alt_shift
 		items.Add("-")
 		if len(_ = grep_targets()):	items.Add("Targets").MenuItems.AddRange(_)
 		else:						items.Add("No targets").Enabled = false
@@ -178,7 +252,7 @@ class Shooter(Δ):
 
 	def activate(victim as IntPtr):
 		bang.Play() unless muffled
-		necrologue.upcount(victim.zoom().shoot()).cycle(max_necro)
+		necrologue.upcount(victim.zoom().shoot().path).cycle(max_necro)
 		stat.victims++
 		return update()
 
@@ -201,14 +275,15 @@ class Shooter(Δ):
 		return result.ToString()
 
 	[Extension] static def locate(proc_handle as IntPtr):
-		proc_handle	= ProcessAccess.QueryInformation.OpenProcess(true, proc_handle)
+		proc_handle	= ProcessAccess.QueryLimitedInformation.OpenProcess(true, proc_handle)
 		result		= StringBuilder(max = 4096)
-		max			= proc_handle.GetModuleFileNameEx(IntPtr.Zero, result, max)
+		if PostXP:	proc_handle.QueryFullProcessImageName(0, result, max)
+		else:		proc_handle.GetModuleFileNameEx(IntPtr.Zero, result, max)
 		proc_handle.CloseHandle()
 		return result.ToString()
 
 	[Extension]	static def shoot(proc_handle as IntPtr):
-		mortem = proc_handle.locate()
+		mortem = Report(proc_handle)
 		Diagnostics.Process.GetProcessById(proc_handle cast int).Kill()
 		return mortem
 
@@ -218,6 +293,15 @@ class Shooter(Δ):
 
 	static target:
 		get: return POINT(Cursor.Position).WindowFromPoint()
+
+	# --Additional service struct.
+	struct Report():
+		path	as string
+		pid		as IntPtr
+		time	as DateTime
+		def constructor(proc_handle as IntPtr):
+			if proc_handle == IntPtr.Zero: proc_handle = Shooter.target.zoom()
+			path, pid, time = proc_handle.locate(), proc_handle, DateTime.Now
 #.} [Classes]
 
 # ==Main code==
