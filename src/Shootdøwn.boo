@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.03
+# Shootdøwn windows destroyer v0.035
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -12,6 +12,7 @@ import System.Windows.Forms
 import System.Collections.Specialized
 import System.Runtime.InteropServices
 import System.Runtime.CompilerServices
+import Microsoft.VisualBasic from Microsoft.VisualBasic
 
 #.{ [Classes]
 abstract class API():
@@ -106,6 +107,7 @@ abstract class Δ(API):
 	protected static final name			= "Shootdøwn"
 	public static final title			= "💀|$name|💀"
 	public static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+	public static final assembly		= Reflection.Assembly.GetExecutingAssembly()
 	static final PostXP					= Environment.OSVersion.Version.Major >= 6
 
 	# --Methods goes here.
@@ -116,15 +118,24 @@ abstract class Δ(API):
 	[Extension] static def msgbox(text as string, icon as MessageBoxIcon):
 		return MessageBox.Show(text, title, MessageBoxButtons.OK, icon)
 
+	[Extension] static def errorbox(text as string):
+		return text.msgbox(MessageBoxIcon.Error)
+
+	[Extension] static def request[of T](text as string, default as T) as T:
+		while true:
+			if result = Interaction.InputBox(text, title, default.ToString(), -1, -1):
+				try: return Convert.ChangeType(result, T)
+				except ex: "Invalid input proveded !".errorbox()
+			else: return default
+
 	[Extension] static def try_lock(lock_name as string):
 		unique as bool
 		mutex = Threading.Mutex(true, lock_name, unique)
 		return mutex if unique
 
 	[Extension] static def find_res(id as string) as IO.Stream:
-		asm = Reflection.Assembly.GetExecutingAssembly()
-		if asm.IsDynamic: return IO.File.OpenRead(id)
-		else: return asm.GetManifestResourceStream(id)
+		if assembly.IsDynamic: return IO.File.OpenRead(id)
+		else: return assembly.GetManifestResourceStream(id)
 
 	[Extension] static def cycle(dict as OrderedDictionary, max as int):
 		while dict.Count > max: dict.RemoveAt(0)
@@ -164,9 +175,13 @@ class InspectorWin(Form):
 		for label, id in (("●「proc」:", "path"), ("●「win」:", "win"),  ("●「pid」:", "pid")):
 			flow.Controls.Add(line = FlowLayoutPanel(FlowDirection: FlowDirection.LeftToRight, AutoSize: true,
 				Margin: Padding(0, 0, 0, 0)))
-			line.Controls.Add(T=Label(Text: label, ForeColor: Color.Cyan, AutoSize: true))
-			info[id] = Label(ForeColor: Color.Coral, AutoSize: true, Size: Size(0, 0))
+			line.Controls.Add(Label(Text: label, ForeColor: Color.Cyan, AutoSize: true))
+			info[id] = Label(ForeColor: Color.Coral, AutoSize: true, Size: Size(0, 0), 
+				Margin: Padding(0, 0, 0, 0))
 			line.Controls.Add(info[id])
+		# Additional aligning.
+		align = info.Values.Select({x|x.Location.X}).Max()
+		info.Values.ToList().ForEach({x|x.Margin = Padding(align - x.Location.X, 0, 0, 0)})
 		# API styling setup.
 		style = API.GetWindowLong(Handle, API.GWL.ExStyle) | 0x80000 | 0x20
 		API.SetWindowLong(Handle, API.GWL.ExStyle, style)
@@ -185,9 +200,9 @@ class InspectorWin(Form):
 		get: return join(info.Values.Select({x|x.Text}), '\n')
 # -------------------- #
 class Shooter(Δ):
-	public muffled		= false
-	public alt_shift	= false
 	public max_necro	= 10
+	public muffled		= false
+	public inspect_on	= assembly.IsDynamic
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
 	final timer			= Timer(Enabled: true, Interval: 100, Tick: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|activate() if e.Msg == 0x0312})
@@ -208,7 +223,7 @@ class Shooter(Δ):
 
 	def update() as Shooter:
 		icon.Text = "$name 「💀: $(stat.victims)」"
-		if alt_shift and Keys.Menu.pressed() and Keys.ShiftKey.pressed():
+		if inspect_on and Keys.RMenu.pressed() and Keys.ShiftKey.pressed():
 			analyzer.update().Show()
 			if Keys.Insert.GetKeyState() & 1: Clipboard.SetText(analyzer.checkout)
 		else: analyzer.Hide()
@@ -236,25 +251,39 @@ class Shooter(Δ):
 		# -Main code.
 		items = icon.ContextMenu.MenuItems
 		items.Clear()
+		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.03", "*" * 19,
+			"$name v0.035", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
-		items.Add("Muffle sounds",			{muffled=(not muffled)}).Checked = muffled
-		items.Add("Inspect on alt+shift",	{alt_shift=(not alt_shift)}).Checked = alt_shift
+		items.Add("Muffle sounds",				{muffled=(not muffled)}).Checked = muffled
+		items.Add("Inspect on [r]Alt+Shift",	{inspect_on=(not inspect_on)}).Checked = inspect_on
 		items.Add("-")
-		if len(_ = grep_targets()):	items.Add("Targets").MenuItems.AddRange(_)
+		# Alternative targeting and history.
+		if len(Ω = grep_targets()):	items.Add("Targets").MenuItems.AddRange(Ω)
 		else:						items.Add("No targets").Enabled = false
+		sub = items.Add("Auxilary").MenuItems
+		sub.Add("Target by win id...", {activate("Input window ID to destroy:".request(0))})
+		sub.Add("Target by proc id...", {slay("Input process ID to destroy:".request(0))})
 		if necrologue.Count: items.Add("Tombstones").MenuItems.AddRange(grep_necro())
 		items.Add("-")
+		# Termination.
 		items.Add("Terminate", {destroy})
 		return self
 
-	def activate(victim as IntPtr):
-		bang.Play() unless muffled
-		necrologue.upcount(victim.zoom().shoot().path).cycle(max_necro)
-		stat.victims++
+	private def slay(proc as IntPtr):
+		try:
+			bang.Play() unless muffled
+			necrologue.upcount(proc.shoot().path).cycle(max_necro)
+			stat.victims++
+		except ex: ex.ToString().Split(char('\n'))[0].errorbox()
 		return update()
+
+	def activate(victim as IntPtr):
+		return slay(victim.zoom())
+
+	def activate(victim as int):
+		if victim: return activate(IntPtr(victim))
 
 	def activate():
 		return activate(target)
@@ -306,4 +335,4 @@ class Shooter(Δ):
 
 # ==Main code==
 if Shooter().locker: Application.Run()
-else: Δ.msgbox("This program is already running.", MessageBoxIcon.Error)
+else: Δ.errorbox("This program is already running.")
