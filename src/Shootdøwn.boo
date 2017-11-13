@@ -262,7 +262,7 @@ class Shooter(Δ):
 		# Alternative targeting and history.
 		if len(Ω = grep_targets()):	items.Add("Targets").MenuItems.AddRange(Ω)
 		else:						items.Add("No targets").Enabled = false
-		sub = items.Add("Auxilary").MenuItems
+		sub = items.Add("Auxiliary").MenuItems
 		sub.Add("Target by win id...", {activate("Input window ID to destroy:".request(0))})
 		sub.Add("Target by proc id...", {slay("Input process ID to destroy:".request(0))})
 		if necrologue.Count: items.Add("Tombstones").MenuItems.AddRange(grep_necro())
