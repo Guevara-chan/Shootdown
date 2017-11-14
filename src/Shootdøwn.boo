@@ -1,13 +1,15 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.035
+# Shootdøwn windows destroyer v0.04
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 import System
+import System.IO
 import System.Text
 import System.Linq
 import System.Media
 import System.Drawing
+import System.Diagnostics
 import System.Windows.Forms
 import System.Collections.Specialized
 import System.Runtime.InteropServices
@@ -102,13 +104,18 @@ abstract class API():
 	[Extension]	static def GetModuleFileNameEx(hProc as IntPtr, hMod as IntPtr, lpName as StringBuilder, 
 		nSize as int) as uint:
 		pass
+	[DllImport("psapi.dll")]
+	[Extension]	static def EnumProcesses([MarshalAs(UnmanagedType.LPArray, ArraySubType: UnmanagedType.U4)]\
+		processIds as (uint), arraySizeBytes as uint, ref bytesCopied as uint) as bool:
+		pass
 # -------------------- #
 abstract class Δ(API):
-	protected static final name			= "Shootdøwn"
-	public static final title			= "💀|$name|💀"
+	static final name					= "Shootdøwn"
+	static final postXP					= Environment.OSVersion.Version.Major >= 6
+	public static final win_title		= "💀|$name|💀"
 	public static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
 	public static final assembly		= Reflection.Assembly.GetExecutingAssembly()
-	static final PostXP					= Environment.OSVersion.Version.Major >= 6
+	public static final nil				= IntPtr.Zero
 
 	# --Methods goes here.
 	[Extension] static def either[of T](val as bool, false_val as T, true_val as T):
@@ -116,14 +123,14 @@ abstract class Δ(API):
 		else: return false_val
 
 	[Extension] static def msgbox(text as string, icon as MessageBoxIcon):
-		return MessageBox.Show(text, title, MessageBoxButtons.OK, icon)
+		return MessageBox.Show(text, win_title, MessageBoxButtons.OK, icon)
 
 	[Extension] static def errorbox(text as string):
 		return text.msgbox(MessageBoxIcon.Error)
 
 	[Extension] static def request[of T](text as string, default as T) as T:
 		while true:
-			if result = Interaction.InputBox(text, title, default.ToString(), -1, -1):
+			if result = Interaction.InputBox(text, win_title, default.ToString(), -1, -1):
 				try: return Convert.ChangeType(result, T)
 				except ex: "Invalid input proveded !".errorbox()
 			else: return default
@@ -133,8 +140,8 @@ abstract class Δ(API):
 		mutex = Threading.Mutex(true, lock_name, unique)
 		return mutex if unique
 
-	[Extension] static def find_res(id as string) as IO.Stream:
-		if assembly.IsDynamic: return IO.File.OpenRead(id)
+	[Extension] static def find_res(id as string) as Stream:
+		if assembly.IsDynamic: return File.OpenRead(id)
 		else: return assembly.GetManifestResourceStream(id)
 
 	[Extension] static def cycle(dict as OrderedDictionary, max as int):
@@ -205,10 +212,11 @@ class Shooter(Δ):
 	public inspect_on	= assembly.IsDynamic
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
 	final timer			= Timer(Enabled: true, Interval: 100, Tick: {update})
-	final msg_handler	= WM_Receiver(WM: {e as Message|activate() if e.Msg == 0x0312})
+	final msg_handler	= WM_Receiver(WM: {e as Message|shootdøwn() if e.Msg == 0x0312})
 	final bang			= SoundPlayer("shoot.wav".find_res())
 	final necrologue	= OrderedDictionary(max_necro)
 	final analyzer		= InspectorWin(self)
+	final hl_target		as MenuItem
 	public final locker	= "!$name!".try_lock()
 	struct stat():
 		static startup	= DateTime.Now
@@ -234,26 +242,28 @@ class Shooter(Δ):
 		def grep_targets():
 			cache = List[of MenuItem]()
 			for win in scan_around():
-				owner, naming = IO.Path.GetFileNameWithoutExtension(win.zoom().locate()), win.identify()
+				owner, naming = Path.GetFileNameWithoutExtension(win.zoom().locate()), win.identify()
 				cache.Add(MenuItem(
-					"$owner:: "+(naming != '').either('<nil_title>', naming), {activate(win)}
+					"$owner:: "+(naming != '').either('<nil_title>', naming), {shootdøwn(win)}
 					))
 			return cache.GroupBy({x|x.Text}).Select({y|y.First()}).ToArray()
 		def grep_necro():
+			index = 0
 			cache = List[of MenuItem]()
 			for mortem as Collections.DictionaryEntry in necrologue:
-				kill_count as int, path = mortem.Value, mortem.Key
-				cache.Add(MenuItem(
-					(kill_count > 1).either("", "「💀: $(kill_count)」 ") + path,
-					{shell("explorer", "/select,\"$path\"")}
-					))
+				kill_count as int, path as string = mortem.Value, mortem.Key
+				cache.Add(tombstone = MenuItem((kill_count > 1).either("", "「💀: $(kill_count)」 ") + path))
+				tombstone.MenuItems.Add("Visit",	{Process.Start("explorer", "/select,\"$path\"")})
+				tombstone.MenuItems.Add("Purge", 	{necrologue.RemoveAt(0); path.purge()})
+				tombstone.MenuItems.Add("Reraise",	{Process.Start(path, "")})
+				index++
 			return cache.ToArray()
 		# -Main code.
 		items = icon.ContextMenu.MenuItems
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.035", "*" * 19,
+			"$name v0.04", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
 		items.Add("Muffle sounds",				{muffled=(not muffled)}).Checked = muffled
@@ -263,35 +273,62 @@ class Shooter(Δ):
 		if len(Ω = grep_targets()):	items.Add("Targets").MenuItems.AddRange(Ω)
 		else:						items.Add("No targets").Enabled = false
 		sub = items.Add("Auxiliary").MenuItems
-		sub.Add("Target by win id...", {activate("Input window ID to destroy:".request(0))})
-		sub.Add("Target by proc id...", {slay("Input process ID to destroy:".request(0))})
+		sub.Add("Target by win id...",		{shootdøwn("Input window ID to destroy:".request(0))})
+		sub.Add("Target by proc id...",		{slay_proc("Input process ID to destroy:".request(0))})
+		sub.Add("Target by win title...",	{shootdøwn("Input window title to destroy:".request("").lookup_title())})
+		sub.Add("Target by proc path...",	{slay_proc("Input process path to destroy:".request("").lookup_path())})
 		if necrologue.Count: items.Add("Tombstones").MenuItems.AddRange(grep_necro())
 		items.Add("-")
 		# Termination.
 		items.Add("Terminate", {destroy})
 		return self
 
-	private def slay(proc as IntPtr):
+	# Overloads.[
+	def slay_proc(proc as IntPtr):
 		try:
 			bang.Play() unless muffled
 			necrologue.upcount(proc.shoot().path).cycle(max_necro)
 			stat.victims++
-		except ex: ex.ToString().Split(char('\n'))[0].errorbox()
+		except ex: ex.ToString().errorbox()
 		return update()
 
-	def activate(victim as IntPtr):
-		return slay(victim.zoom())
+	def slay_proc(proc as int):
+		if proc: return slay_proc(IntPtr(proc))
 
-	def activate(victim as int):
-		if victim: return activate(IntPtr(victim))
+	def slay_proc(procs as List[of IntPtr]):
+		return [slay_proc(proc) for proc in procs]
+	# ].Overloads
 
-	def activate():
-		return activate(target)
+	# Overloads.[
+	def shootdøwn(victim as IntPtr):
+		return slay_proc(victim.zoom())
+
+	def shootdøwn(victim as int):
+		if victim: return shootdøwn(IntPtr(victim))
+
+	def shootdøwn(victims as List[of IntPtr]):
+		return [slay_proc(x) for x in array(victims.Select({x|x.zoom()}).Distinct())]
+
+	def shootdøwn():
+		return shootdøwn(target)
+	# ].Overloads
 
 	static def scan_around():
 		result = List[of IntPtr]()
-		{hwnd as IntPtr, lparam|result.Add(hwnd) if hwnd.IsWindowVisible(); return true}.EnumWindows(IntPtr.Zero)
+		{hwnd as IntPtr, x|result.Add(hwnd) if hwnd.IsWindowVisible(); return true}.EnumWindows(nil)
 		return result
+
+	[Extension]	static def lookup_title(title as string):
+		result = List[of IntPtr]()
+		if title:
+			{hwnd as IntPtr, x|result.Add(hwnd) if hwnd.identify().IndexOf(title) >= 0; return true}.EnumWindows(nil)
+		return result
+
+	[Extension]	static def lookup_path(path as string):
+		copied as uint, Δ as int = 0, sizeof(uint)
+		pids = array(uint, max = 1024)
+		if path: pids.EnumProcesses(max * Δ, copied)
+		return List of IntPtr(IntPtr(pid) for pid in pids[:copied/Δ] if IntPtr(pid).locate().IndexOf(path) >= 0)
 
 	[Extension]	static def zoom(win_handle as IntPtr):
 		pid as IntPtr
@@ -306,8 +343,8 @@ class Shooter(Δ):
 	[Extension] static def locate(proc_handle as IntPtr):
 		proc_handle	= ProcessAccess.QueryLimitedInformation.OpenProcess(true, proc_handle)
 		result		= StringBuilder(max = 4096)
-		if PostXP:	proc_handle.QueryFullProcessImageName(0, result, max)
-		else:		proc_handle.GetModuleFileNameEx(IntPtr.Zero, result, max)
+		if postXP:	proc_handle.QueryFullProcessImageName(0, result, max)
+		else:		proc_handle.GetModuleFileNameEx(nil, result, max)
 		proc_handle.CloseHandle()
 		return result.ToString()
 
@@ -315,6 +352,10 @@ class Shooter(Δ):
 		mortem = Report(proc_handle)
 		Diagnostics.Process.GetProcessById(proc_handle cast int).Kill()
 		return mortem
+
+	[Extension]	static def purge(path as string):
+		File.SetAttributes(path, FileAttributes.Normal)
+		File.Delete(path)		
 
 	def destroy():
 		icon.Visible = false; Application.Exit()
@@ -329,7 +370,7 @@ class Shooter(Δ):
 		pid		as IntPtr
 		time	as DateTime
 		def constructor(proc_handle as IntPtr):
-			if proc_handle == IntPtr.Zero: proc_handle = Shooter.target.zoom()
+			if proc_handle == nil: proc_handle = Shooter.target.zoom()
 			path, pid, time = proc_handle.locate(), proc_handle, DateTime.Now
 #.} [Classes]
 
