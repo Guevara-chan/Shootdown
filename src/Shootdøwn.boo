@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.04
+# Shootdøwn windows destroyer v0.045
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -122,11 +122,20 @@ abstract class Δ(API):
 		if val: return true_val
 		else: return false_val
 
+	[Extension] static def msgbox(text as string, icon as MessageBoxIcon, buttond as MessageBoxButtons):
+		return MessageBox.Show(text, win_title, buttond, icon)
+
 	[Extension] static def msgbox(text as string, icon as MessageBoxIcon):
-		return MessageBox.Show(text, win_title, MessageBoxButtons.OK, icon)
+		return text.msgbox(icon, MessageBoxButtons.OK)
 
 	[Extension] static def errorbox(text as string):
 		return text.msgbox(MessageBoxIcon.Error)
+
+	[Extension] static def errorbox(ex as Exception):
+		return ex.ToString().Split(char('\n'))[0].errorbox()
+
+	[Extension] static def askbox(text as string):
+		return text.msgbox(MessageBoxIcon.Question, MessageBoxButtons.YesNo) ==	DialogResult.Yes
 
 	[Extension] static def request[of T](text as string, default as T) as T:
 		while true:
@@ -165,6 +174,67 @@ abstract class Δ(API):
 			WM(msg)
 			super.WndProc(msg)
 # -------------------- #
+class ProcInfo(Δ):
+	public final exe as string
+	public final pid as IntPtr
+	public final taken = DateTime.Now
+
+	def constructor(proc_id as IntPtr):
+		pid	= proc_id
+		exe	= pid.locate()
+
+	def constructor(proc_path as string):
+		exe	= proc_path
+
+	def visit():
+		Process.Start("explorer", "/select,\"$exe\"")
+		return self
+
+	def purge():
+		try:
+			File.SetAttributes(exe, FileAttributes.Normal)
+			File.Delete(exe)
+		except ex: ex.errorbox()
+		return self
+
+	def reraise():
+		Process.Start(ProcessStartInfo(FileName: .exe, WorkingDirectory: Path.GetDirectoryName(exe)))
+		return self
+
+	[Extension] static def locate(proc_handle as IntPtr):
+		proc_handle	= ProcessAccess.QueryLimitedInformation.OpenProcess(true, proc_handle)
+		result		= StringBuilder(max = 4096)
+		if postXP:	proc_handle.QueryFullProcessImageName(0, result, max)
+		else:		proc_handle.GetModuleFileNameEx(nil, result, max)
+		proc_handle.CloseHandle()
+		return result.ToString()
+
+	[Extension]	static def from_win(win_handle as IntPtr):
+		pid as IntPtr
+		win_handle.GetWindowThreadProcessId(pid)
+		return ProcInfo(pid)
+
+	def destroy():
+		Process.GetProcessById(pid cast int).Kill()
+		return self
+# -------------------- #
+class WinInfo(Δ):
+	public final id		as IntPtr
+	public final owner	as ProcInfo
+	public final taken	= DateTime.Now
+
+	def constructor(win_handle as IntPtr):
+		id		= win_handle
+		owner 	= ProcInfo.from_win(id)
+
+	[Extension] static def identify(win_handle as IntPtr):
+		result	= StringBuilder(max = 256)
+		max		= win_handle.GetWindowText(result, max)
+		return result.ToString()
+
+	title:
+		get: return id.identify()
+# -------------------- #
 class InspectorWin(Form):
 	final host as Shooter
 	final info = Collections.Generic.Dictionary[of string, Label]()
@@ -196,8 +266,8 @@ class InspectorWin(Form):
 
 	def update() as InspectorWin:
 		Location			= Cursor.Position
-		summary				= host.Report(IntPtr.Zero)
-		info['path'].Text	= summary.path
+		summary				= host.info(IntPtr.Zero)
+		info['path'].Text	= summary.exe
 		info['win'].Text	= host.target.ToString()
 		info['pid'].Text	= summary.pid.ToString()
 		flow.Location		= Point((Height - flow.Height) / 2 + 1, (Width - flow.Width) / 2 + 1)
@@ -233,7 +303,7 @@ class Shooter(Δ):
 		icon.Text = "$name 「💀: $(stat.victims)」"
 		if inspect_on and Keys.RMenu.pressed() and Keys.ShiftKey.pressed():
 			analyzer.update().Show()
-			if Keys.Insert.GetKeyState() & 1: Clipboard.SetText(analyzer.checkout)
+			Clipboard.SetText(analyzer.checkout) if Keys.Insert.GetKeyState() & 1
 		else: analyzer.Hide()
 		return self
 
@@ -241,29 +311,31 @@ class Shooter(Δ):
 		# -Auxilary procedures.
 		def grep_targets():
 			cache = List[of MenuItem]()
-			for win in scan_around():
-				owner, naming = Path.GetFileNameWithoutExtension(win.zoom().locate()), win.identify()
+			for win in look_around():
+				owner = Path.GetFileNameWithoutExtension(win.owner.exe)
 				cache.Add(MenuItem(
-					"$owner:: "+(naming != '').either('<nil_title>', naming), {shootdøwn(win)}
+					"$owner:: "+(win.title != '').either('<nil_title>', win.title), {shootdøwn(win)}
 					))
 			return cache.GroupBy({x|x.Text}).Select({y|y.First()}).ToArray()
 		def grep_necro():
-			index = 0
-			cache = List[of MenuItem]()
+			index		= 0
+			cache		= List[of MenuItem]()
 			for mortem as Collections.DictionaryEntry in necrologue:
-				kill_count as int, path as string = mortem.Value, mortem.Key
-				cache.Add(tombstone = MenuItem((kill_count > 1).either("", "「💀: $(kill_count)」 ") + path))
-				tombstone.MenuItems.Add("Visit",	{Process.Start("explorer", "/select,\"$path\"")})
-				tombstone.MenuItems.Add("Purge", 	{necrologue.RemoveAt(0); path.purge()})
-				tombstone.MenuItems.Add("Reraise",	{Process.Start(path, "")})
-				index++
+				idx			= index++
+				kill_count as int, info as ProcInfo = mortem.Value, ProcInfo(mortem.Key as string)
+				Ω			= "Are you sure want to delete '$(info.exe)' ?"
+				cache.Add(tomb = MenuItem((kill_count > 1).either("", "「💀: $(kill_count)」 ") + info.exe))
+				tomb.MenuItems.Add("Visit",		{info.visit()})
+				tomb.MenuItems.Add("Purge",		{necrologue.RemoveAt(idx+info.purge().pid cast int) if Ω.askbox()})
+				tomb.MenuItems.Add("Reraise",	{info.reraise()})
+				#question.askbox()
 			return cache.ToArray()
 		# -Main code.
 		items = icon.ContextMenu.MenuItems
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.04", "*" * 19,
+			"$name v0.045", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
 		items.Add("Muffle sounds",				{muffled=(not muffled)}).Checked = muffled
@@ -274,104 +346,78 @@ class Shooter(Δ):
 		else:						items.Add("No targets").Enabled = false
 		sub = items.Add("Auxiliary").MenuItems
 		sub.Add("Target by win id...",		{shootdøwn("Input window ID to destroy:".request(0))})
-		sub.Add("Target by proc id...",		{slay_proc("Input process ID to destroy:".request(0))})
+		sub.Add("Target by proc id...",		{shootdøwn_pid("Input process ID to destroy:".request(0))})
 		sub.Add("Target by win title...",	{shootdøwn("Input window title to destroy:".request("").lookup_title())})
-		sub.Add("Target by proc path...",	{slay_proc("Input process path to destroy:".request("").lookup_path())})
-		if necrologue.Count: items.Add("Tombstones").MenuItems.AddRange(grep_necro())
+		sub.Add("Target by proc path...",	{shootdøwn("Input process path to destroy:".request("").lookup_path())})
+		items.Add("Tombstones").MenuItems.AddRange(grep_necro()) if necrologue.Count
 		items.Add("-")
 		# Termination.
 		items.Add("Terminate", {destroy})
 		return self
 
 	# Overloads.[
-	def slay_proc(proc as IntPtr):
+	def shootdøwn(proc as ProcInfo):
 		try:
 			bang.Play() unless muffled
-			necrologue.upcount(proc.shoot().path).cycle(max_necro)
+			necrologue.upcount(proc.destroy().exe).cycle(max_necro)
 			stat.victims++
-		except ex: ex.ToString().errorbox()
-		return update()
+		except ex: ex.errorbox()
 
-	def slay_proc(proc as int):
-		if proc: return slay_proc(IntPtr(proc))
+	def shootdøwn(victim as WinInfo):
+		shootdøwn(victim.owner)
 
-	def slay_proc(procs as List[of IntPtr]):
-		return [slay_proc(proc) for proc in procs]
-	# ].Overloads
+	def shootdøwn(victim as uint):
+		shootdøwn(victim.winfo()) if victim
 
-	# Overloads.[
-	def shootdøwn(victim as IntPtr):
-		return slay_proc(victim.zoom())
+	def shootdøwn(procs as List[of ProcInfo]):
+		for proc in procs: shootdøwn(proc)
 
-	def shootdøwn(victim as int):
-		if victim: return shootdøwn(IntPtr(victim))
-
-	def shootdøwn(victims as List[of IntPtr]):
-		return [slay_proc(x) for x in array(victims.Select({x|x.zoom()}).Distinct())]
+	def shootdøwn(victims as List[of WinInfo]):
+		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
 
 	def shootdøwn():
-		return shootdøwn(target)
+		shootdøwn(target)
+
+	def shootdøwn_pid(pid as uint):
+		shootdøwn(pid.info()) if pid
 	# ].Overloads
 
-	static def scan_around():
-		result = List[of IntPtr]()
-		{hwnd as IntPtr, x|result.Add(hwnd) if hwnd.IsWindowVisible(); return true}.EnumWindows(nil)
+	static def look_around():
+		result = List[of WinInfo]()
+		{hwnd as IntPtr, x|result.Add(WinInfo(hwnd)) if hwnd.IsWindowVisible(); return true}.EnumWindows(nil)
 		return result
 
 	[Extension]	static def lookup_title(title as string):
-		result = List[of IntPtr]()
+		result = List[of WinInfo]()
 		if title:
-			{hwnd as IntPtr, x|result.Add(hwnd) if hwnd.identify().IndexOf(title) >= 0; return true}.EnumWindows(nil)
+			{hwnd as IntPtr, x|result.Add(hwnd.winfo()) if hwnd.winfo().title.IndexOf(title) >= 0; return true}\
+			.EnumWindows(nil)
 		return result
 
 	[Extension]	static def lookup_path(path as string):
 		copied as uint, Δ as int = 0, sizeof(uint)
 		pids = array(uint, max = 1024)
-		if path: pids.EnumProcesses(max * Δ, copied)
-		return List of IntPtr(IntPtr(pid) for pid in pids[:copied/Δ] if IntPtr(pid).locate().IndexOf(path) >= 0)
+		pids.EnumProcesses(max * Δ, copied) if path
+		return List of ProcInfo(pid.info() for pid in pids[:copied/Δ] if pid.info().exe.IndexOf(path) >= 0)
 
-	[Extension]	static def zoom(win_handle as IntPtr):
-		pid as IntPtr
-		win_handle.GetWindowThreadProcessId(pid)
-		return pid
+	[Extension] static def info(pid as IntPtr):
+		return ProcInfo(pid)
 
-	[Extension] static def identify(win_handle as IntPtr):
-		result	= StringBuilder(max = 256)
-		max		= win_handle.GetWindowText(result, max)
-		return result.ToString()
+	[Extension] static def info(pid as uint):
+		return ProcInfo(IntPtr(pid))
 
-	[Extension] static def locate(proc_handle as IntPtr):
-		proc_handle	= ProcessAccess.QueryLimitedInformation.OpenProcess(true, proc_handle)
-		result		= StringBuilder(max = 4096)
-		if postXP:	proc_handle.QueryFullProcessImageName(0, result, max)
-		else:		proc_handle.GetModuleFileNameEx(nil, result, max)
-		proc_handle.CloseHandle()
-		return result.ToString()
+	[Extension] static def winfo(win_handle as IntPtr):
+		return WinInfo(win_handle)
 
-	[Extension]	static def shoot(proc_handle as IntPtr):
-		mortem = Report(proc_handle)
-		Diagnostics.Process.GetProcessById(proc_handle cast int).Kill()
-		return mortem
+	[Extension] static def winfo(win_handle as uint):
+		return WinInfo(IntPtr(win_handle))
 
-	[Extension]	static def purge(path as string):
-		File.SetAttributes(path, FileAttributes.Normal)
-		File.Delete(path)		
+	static target:
+		get: return WinInfo(POINT(Cursor.Position).WindowFromPoint())
 
 	def destroy():
 		icon.Visible = false; Application.Exit()
 		return self
-
-	static target:
-		get: return POINT(Cursor.Position).WindowFromPoint()
-
-	# --Additional service struct.
-	struct Report():
-		path	as string
-		pid		as IntPtr
-		time	as DateTime
-		def constructor(proc_handle as IntPtr):
-			if proc_handle == nil: proc_handle = Shooter.target.zoom()
-			path, pid, time = proc_handle.locate(), proc_handle, DateTime.Now
 #.} [Classes]
 
 # ==Main code==
