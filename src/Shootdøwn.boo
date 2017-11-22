@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.045
+# Shootdøwn windows destroyer v0.047
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -11,6 +11,7 @@ import System.Media
 import System.Drawing
 import System.Diagnostics
 import System.Windows.Forms
+import System.Collections.Generic
 import System.Collections.Specialized
 import System.Runtime.InteropServices
 import System.Runtime.CompilerServices
@@ -122,8 +123,11 @@ abstract class Δ(API):
 		if val: return true_val
 		else: return false_val
 
-	[Extension] static def msgbox(text as string, icon as MessageBoxIcon, buttond as MessageBoxButtons):
-		return MessageBox.Show(text, win_title, buttond, icon)
+	[Extension] static def either[of T](val as string, false_val as T, true_val as T):
+		return either(val != '', false_val, true_val)
+	
+	[Extension] static def msgbox(text as string, icon as MessageBoxIcon, buttons as MessageBoxButtons):
+		return MessageBox.Show(text, win_title, buttons, icon)
 
 	[Extension] static def msgbox(text as string, icon as MessageBoxIcon):
 		return text.msgbox(icon, MessageBoxButtons.OK)
@@ -131,8 +135,11 @@ abstract class Δ(API):
 	[Extension] static def errorbox(text as string):
 		return text.msgbox(MessageBoxIcon.Error)
 
+	[Extension] static def errorbox(ex as Exception, rem as string):
+		return "$(ex.ToString().Split(char('\n'))[0])\n$rem".errorbox()
+
 	[Extension] static def errorbox(ex as Exception):
-		return ex.ToString().Split(char('\n'))[0].errorbox()
+		return ex.errorbox("")
 
 	[Extension] static def askbox(text as string):
 		return text.msgbox(MessageBoxIcon.Question, MessageBoxButtons.YesNo) ==	DialogResult.Yes
@@ -165,6 +172,12 @@ abstract class Δ(API):
 	[Extension] static def pressed(key as Keys):
 		return (key.GetKeyState() & 0x10000000)
 
+	[Extension] static def bind(proc as callable, arg):
+		return {proc(arg)}
+
+	[Extension] static def bind(proc as callable, arg, arg2):
+		return {proc(arg, arg2)}
+
 	# -- Additional service class.
 	class WM_Receiver(Form):
 		event WM as callable(Message)
@@ -187,6 +200,7 @@ class ProcInfo(Δ):
 		exe	= proc_path
 
 	def visit():
+		print exe
 		Process.Start("explorer", "/select,\"$exe\"")
 		return self
 
@@ -198,7 +212,7 @@ class ProcInfo(Δ):
 		return self
 
 	def reraise():
-		Process.Start(ProcessStartInfo(FileName: .exe, WorkingDirectory: Path.GetDirectoryName(exe)))
+		Process.Start(ProcessStartInfo(FileName: exe, WorkingDirectory: Path.GetDirectoryName(exe)))
 		return self
 
 	[Extension] static def locate(proc_handle as IntPtr):
@@ -217,6 +231,16 @@ class ProcInfo(Δ):
 	def destroy():
 		Process.GetProcessById(pid cast int).Kill()
 		return self
+
+	static all_pids:
+		get:
+			copied as uint, Δ as int = 0, sizeof(uint)
+			pids = array(uint, max = 1024)
+			pids.EnumProcesses(max * Δ, copied)
+			return pids[:copied/Δ]
+
+	static all:
+		get: return all_pids.Select({x|ProcInfo(IntPtr(x))})
 # -------------------- #
 class WinInfo(Δ):
 	public final id		as IntPtr
@@ -280,17 +304,20 @@ class Shooter(Δ):
 	public max_necro	= 10
 	public muffled		= false
 	public inspect_on	= assembly.IsDynamic
+	final my			= Process.GetCurrentProcess().Handle.info()
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
-	final timer			= Timer(Enabled: true, Interval: 100, Tick: {update})
+	final ak_timer		= Timer(Enabled: true, Interval: 1000, Tick: {shootdøwn(lookup_doomed())})
+	final upd_timer		= Timer(Enabled: true, Interval: 100, Tick: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|shootdøwn() if e.Msg == 0x0312})
 	final bang			= SoundPlayer("shoot.wav".find_res())
 	final necrologue	= OrderedDictionary(max_necro)
 	final analyzer		= InspectorWin(self)
-	final hl_target		as MenuItem
+	final autokill		= {"path": HashSet of string(), "title": HashSet of string()}
 	public final locker	= "!$name!".try_lock()
 	struct stat():
 		static startup	= DateTime.Now
 		static victims	= 0
+		static errors	= 0
 
 	# --Methods goes here.
 	def constructor():
@@ -310,34 +337,32 @@ class Shooter(Δ):
 	private def setup_menu():
 		# -Auxilary procedures.
 		def grep_targets():
-			cache = List[of MenuItem]()
+			cache = List of MenuItem()
 			for win in look_around():
 				owner = Path.GetFileNameWithoutExtension(win.owner.exe)
-				cache.Add(MenuItem(
-					"$owner:: "+(win.title != '').either('<nil_title>', win.title), {shootdøwn(win)}
-					))
+				cache.Add(MenuItem("$owner:: " + win.title.either('<nil_title>', win.title), {shootdøwn(win)}))
 			return cache.GroupBy({x|x.Text}).Select({y|y.First()}).ToArray()
 		def grep_necro():
 			index		= 0
-			cache		= List[of MenuItem]()
+			cache	= List of MenuItem()
 			for mortem as Collections.DictionaryEntry in necrologue:
-				idx			= index++
 				kill_count as int, info as ProcInfo = mortem.Value, ProcInfo(mortem.Key as string)
-				Ω			= "Are you sure want to delete '$(info.exe)' ?"
 				cache.Add(tomb = MenuItem((kill_count > 1).either("", "「💀: $(kill_count)」 ") + info.exe))
-				tomb.MenuItems.Add("Visit",		{info.visit()})
-				tomb.MenuItems.Add("Purge",		{necrologue.RemoveAt(idx+info.purge().pid cast int) if Ω.askbox()})
-				tomb.MenuItems.Add("Reraise",	{info.reraise()})
-				#question.askbox()
+				tomb.MenuItems.Add("Visit",		{x as ProcInfo|x.visit()}.bind(info))
+				tomb.MenuItems.Add("Purge",		{x as ProcInfo,i as int|necrologue.RemoveAt(i+x.purge().pid cast int)
+					if "Are you sure want to delete '$(x.exe)' ?".askbox()}.bind(info, index))
+				tomb.MenuItems.Add("Reraise",	{x as ProcInfo|x.reraise()}.bind(info))
+				index++
 			return cache.ToArray()
 		# -Main code.
 		items = icon.ContextMenu.MenuItems
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.045", "*" * 19,
+			"$name v0.047", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
-			"Processess destroyed:: $(stat.victims)"), '\n').msgbox(MessageBoxIcon.Information)})
+			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n')\
+			.msgbox(MessageBoxIcon.Information)})
 		items.Add("Muffle sounds",				{muffled=(not muffled)}).Checked = muffled
 		items.Add("Inspect on [r]Alt+Shift",	{inspect_on=(not inspect_on)}).Checked = inspect_on
 		items.Add("-")
@@ -357,48 +382,51 @@ class Shooter(Δ):
 
 	# Overloads.[
 	def shootdøwn(proc as ProcInfo):
+		return if proc.pid == my.pid or proc.pid == nil # Suicide is a mortal sin.
 		try:
 			bang.Play() unless muffled
 			necrologue.upcount(proc.destroy().exe).cycle(max_necro)
 			stat.victims++
-		except ex: ex.errorbox()
+		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$(proc.exe)']")
 
 	def shootdøwn(victim as WinInfo):
 		shootdøwn(victim.owner)
 
 	def shootdøwn(victim as uint):
-		shootdøwn(victim.winfo()) if victim
+		shootdøwn(victim.winfo())
 
-	def shootdøwn(procs as List[of ProcInfo]):
+	def shootdøwn(procs as List of ProcInfo):
 		for proc in procs: shootdøwn(proc)
 
-	def shootdøwn(victims as List[of WinInfo]):
+	def shootdøwn(victims as List of WinInfo):
 		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
 
 	def shootdøwn():
 		shootdøwn(target)
 
 	def shootdøwn_pid(pid as uint):
-		shootdøwn(pid.info()) if pid
+		shootdøwn(pid.info())
 	# ].Overloads
 
 	static def look_around():
-		result = List[of WinInfo]()
+		result = List of WinInfo()
 		{hwnd as IntPtr, x|result.Add(WinInfo(hwnd)) if hwnd.IsWindowVisible(); return true}.EnumWindows(nil)
 		return result
 
+	private def lookup_doomed():
+		result = List of ProcInfo()
+		for proc in ProcInfo.all: result.AddRange(proc for path in autokill["path"] if path in proc.exe)
+		return result.GroupBy({x|x.pid}).Select({y|y.First()}).ToList()
+
 	[Extension]	static def lookup_title(title as string):
-		result = List[of WinInfo]()
+		result = List of WinInfo()
 		if title:
-			{hwnd as IntPtr, x|result.Add(hwnd.winfo()) if hwnd.winfo().title.IndexOf(title) >= 0; return true}\
+			{hwnd as IntPtr, x|result.Add(hwnd.winfo()) if title in hwnd.winfo().title; return true}\
 			.EnumWindows(nil)
 		return result
 
 	[Extension]	static def lookup_path(path as string):
-		copied as uint, Δ as int = 0, sizeof(uint)
-		pids = array(uint, max = 1024)
-		pids.EnumProcesses(max * Δ, copied) if path
-		return List of ProcInfo(pid.info() for pid in pids[:copied/Δ] if pid.info().exe.IndexOf(path) >= 0)
+		return List of ProcInfo(proc for proc in path.either((,), ProcInfo.all) if path in proc.exe)
 
 	[Extension] static def info(pid as IntPtr):
 		return ProcInfo(pid)
