@@ -8,6 +8,7 @@ Just press _Alt+Shift+F4_ any time to instantly send that thing under your mouse
 - List-based targeting for any visible window registered by OS.
 - Hotkey-based targeting for window under cursor (_Alt+Shift+F4_).
 - Auxiliary targeting options: window id, proccess id, title fragment and exe path fragment.
+- Extensive history list with additional post-termination options: reraise process, delete exe, open in explorer.
 
 # 「Reassembling」
 __Shootdøwn__ was written entirelly in _Boo v0.9.7.0_ with auxiliary build script provided in _Shell_.  
