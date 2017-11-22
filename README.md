@@ -11,4 +11,4 @@ Just press _Alt+Shift+F4_ to instantly send that thing under your mouse pointer 
 
 # 「Reassembling」
 __Shootdøwn__ was written entirelly in _Boo v0.9.7.0_ with auxiliary build script provided in _Shell_.  
-It requires [IlMerge](https://github.com/Microsoft/ILMerge) and [Resource Hacker](http://www.angusj.com/resourcehacker/) to be installed and properly refernced in _build.cmd_ for recompilation.
+It requires [ILMerge](https://github.com/Microsoft/ILMerge) and [Resource Hacker](http://www.angusj.com/resourcehacker/) to be installed and properly refernced in _build.cmd_ for recompilation.
