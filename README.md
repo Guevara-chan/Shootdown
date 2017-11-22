@@ -4,7 +4,7 @@ Just press _Alt+Shift+F4_ any time to instantly send that thing under your mouse
   
 # 「Featuræ」
 - Traybar GUI with deactivable sound.
-- Built-in info explorer with clip hotkey (_Alt+Shift+Ins_).
+- Built-in info explorer with clipboard hotkey (_Alt+Shift+Ins_).
 - List-based targeting for any visible window registered by OS.
 - Hotkey-based targeting for window under cursor (_Alt+Shift+F4_).
 - Auxiliary targeting options: window id, proccess id, title fragment and exe path fragment.
