@@ -1,5 +1,5 @@
 # 「Sum」
-Shootdøwn in an experimental pid-based windows destroyer for XP and beyond, powered by minimalistic interface.
+__Shootdøwn__ in an experimental pid-based windows destroyer for XP and beyond, powered by minimalistic interface.
 Just press _Alt+Shift+F4_ to instantly send that thing under your mouse pointer right into oblivion.  
   
 # 「Featuræ」
