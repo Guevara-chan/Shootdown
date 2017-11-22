@@ -290,10 +290,10 @@ class InspectorWin(Form):
 
 	def update() as InspectorWin:
 		Location			= Cursor.Position
-		summary				= host.info(IntPtr.Zero)
-		info['path'].Text	= summary.exe
-		info['win'].Text	= host.target.ToString()
-		info['pid'].Text	= summary.pid.ToString()
+		pinfo				= host.info(0)
+		info['path'].Text	= pinfo.exe
+		info['win'].Text	= host.target.id.ToString()
+		info['pid'].Text	= pinfo.pid.ToString()
 		flow.Location		= Point((Height - flow.Height) / 2 + 1, (Width - flow.Width) / 2 + 1)
 		return self
 
@@ -429,19 +429,21 @@ class Shooter(Δ):
 		return List of ProcInfo(proc for proc in path.either((,), ProcInfo.all) if path in proc.exe)
 
 	[Extension] static def info(pid as IntPtr):
+		return nil.winfo().owner if pid == nil
 		return ProcInfo(pid)
 
 	[Extension] static def info(pid as uint):
-		return ProcInfo(IntPtr(pid))
+		return IntPtr(pid).info()
 
 	[Extension] static def winfo(win_handle as IntPtr):
+		return WinInfo(POINT(Cursor.Position).WindowFromPoint()) if win_handle == nil
 		return WinInfo(win_handle)
 
 	[Extension] static def winfo(win_handle as uint):
-		return WinInfo(IntPtr(win_handle))
+		return IntPtr(win_handle).winfo()
 
-	static target:
-		get: return WinInfo(POINT(Cursor.Position).WindowFromPoint())
+	target:
+		get: return nil.winfo()
 
 	def destroy():
 		icon.Visible = false; Application.Exit()
