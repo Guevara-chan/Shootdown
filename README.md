@@ -18,4 +18,4 @@ It requires [ILMerge](https://github.com/Microsoft/ILMerge) and [Resource Hacker
 
 # 「Brief samples of interfacing」
 ![Inspector window](https://user-images.githubusercontent.com/8768470/33189881-3d85da40-d0b8-11e7-827b-edf4151fa76f.png)
-![Menu targeting](https://user-images.githubusercontent.com/8768470/33189937-c88049b4-d0b8-11e7-9949-dd77ebae8bb8.png)
+![Menu targeting](https://user-images.githubusercontent.com/8768470/33189956-f367594c-d0b8-11e7-9e53-bac18ce4da18.png)
