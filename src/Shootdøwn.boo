@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.047
+# Shootdøwn windows destroyer v0.05
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -7,7 +7,6 @@ import System
 import System.IO
 import System.Text
 import System.Linq
-import System.Media
 import System.Drawing
 import System.Diagnostics
 import System.Windows.Forms
@@ -16,6 +15,7 @@ import System.Collections.Specialized
 import System.Runtime.InteropServices
 import System.Runtime.CompilerServices
 import Microsoft.VisualBasic from Microsoft.VisualBasic
+import System.Web.Script.Serialization from System.Web.Extensions
 
 #.{ [Classes]
 abstract class API():
@@ -119,7 +119,7 @@ abstract class Δ(API):
 	public static final nil				= IntPtr.Zero
 
 	# --Methods goes here.
-	[Extension] static def either[of T](val as bool, false_val as T, true_val as T):
+	[Extension] static def either[of T, T2](val as T, false_val as T2, true_val as T2):
 		if val: return true_val
 		else: return false_val
 
@@ -178,6 +178,16 @@ abstract class Δ(API):
 	[Extension] static def bind(proc as callable, arg, arg2):
 		return {proc(arg, arg2)}
 
+	def peek(name as string):
+		proto = GetType()
+		if prop = proto.GetProperty(name): return prop.GetValue(self, null)
+		else: return proto.GetField(name).GetValue(self)
+
+	def poke(name as string, val as object):
+		proto = GetType()
+		if prop = proto.GetProperty(name): prop.SetValue(self, val)
+		else: proto.GetField(name).SetValue(self, val)
+
 	# -- Additional service class.
 	class WM_Receiver(Form):
 		event WM as callable(Message)
@@ -186,6 +196,40 @@ abstract class Δ(API):
 		protected def WndProc(ref msg as Message):
 			WM(msg)
 			super.WndProc(msg)
+# -------------------- #
+abstract class Observable(Δ):
+	private Δprev_state = json
+
+	def constructor():
+		pass
+
+	def load(path as string):
+		try:
+			if File.Exists(path): json = File.ReadAllText(path)
+		except ex: ex.errorbox()
+		return sync()
+
+	def sync():
+		Δprev_state = json
+		return self
+
+	def sync(path as string):
+		try: File.WriteAllText(path, sync().json)
+		except ex: ex.errorbox()
+		return self
+
+	[ScriptIgnoreAttribute]	json:
+		get: return JavaScriptSerializer().Serialize(self)
+		set: # Auxiliary procedure.
+			def grep(aggregator as duck, feeder as Dictionary[of string, object]):
+				for entry in feeder: aggregator[entry.Key] = entry.Value
+			 # Deserializtion loop.
+			for entry in JavaScriptSerializer().Deserialize of Dictionary[of string, object](value):
+				if entry.Value.GetType() is Dictionary[of string, object]: grep(peek(entry.Key), entry.Value)
+				else: poke(entry.Key, entry.Value)
+
+	[ScriptIgnoreAttribute]	changed:
+		get: return json != Δprev_state
 # -------------------- #
 class ProcInfo(Δ):
 	public final exe as string
@@ -200,7 +244,6 @@ class ProcInfo(Δ):
 		exe	= proc_path
 
 	def visit():
-		print exe
 		Process.Start("explorer", "/select,\"$exe\"")
 		return self
 
@@ -214,6 +257,12 @@ class ProcInfo(Δ):
 	def reraise():
 		Process.Start(ProcessStartInfo(FileName: exe, WorkingDirectory: Path.GetDirectoryName(exe)))
 		return self
+
+	static def op_Equality(x as ProcInfo, y as ProcInfo):
+		return x.pid == y.pid
+
+	static def op_Implicit(x as ProcInfo):
+		return x.exe
 
 	[Extension] static def locate(proc_handle as IntPtr):
 		proc_handle	= ProcessAccess.QueryLimitedInformation.OpenProcess(true, proc_handle)
@@ -250,6 +299,9 @@ class WinInfo(Δ):
 	def constructor(win_handle as IntPtr):
 		id		= win_handle
 		owner 	= ProcInfo.from_win(id)
+
+	static def op_Implicit(x as WinInfo):
+		return x.owner
 
 	[Extension] static def identify(win_handle as IntPtr):
 		result	= StringBuilder(max = 256)
@@ -291,7 +343,7 @@ class InspectorWin(Form):
 	def update() as InspectorWin:
 		Location			= Cursor.Position
 		pinfo				= host.info(0)
-		info['path'].Text	= pinfo.exe
+		info['path'].Text	= pinfo
 		info['win'].Text	= host.target.id.ToString()
 		info['pid'].Text	= pinfo.pid.ToString()
 		flow.Location		= Point((Height - flow.Height) / 2 + 1, (Width - flow.Width) / 2 + 1)
@@ -301,23 +353,27 @@ class InspectorWin(Form):
 		get: return join(info.Values.Select({x|x.Text}), '\n')
 # -------------------- #
 class Shooter(Δ):
-	public max_necro	= 10
-	public muffled		= false
-	public inspect_on	= assembly.IsDynamic
-	final my			= Process.GetCurrentProcess().Handle.info()
+	final cfg			= Config().load(cfg_file) as Config
+	final me			= Process.GetCurrentProcess().Handle.info()
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
 	final ak_timer		= Timer(Enabled: true, Interval: 1000, Tick: {shootdøwn(lookup_doomed())})
 	final upd_timer		= Timer(Enabled: true, Interval: 100, Tick: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|shootdøwn() if e.Msg == 0x0312})
-	final bang			= SoundPlayer("shoot.wav".find_res())
-	final necrologue	= OrderedDictionary(max_necro)
+	final bang			= Media.SoundPlayer("shoot.wav".find_res())
+	final necrologue	= OrderedDictionary(cfg.max_necro)
 	final analyzer		= InspectorWin(self)
-	final autokill		= {"path": HashSet of string(), "title": HashSet of string()}
 	public final locker	= "!$name!".try_lock()
+	static final cfg_file = "$name.json"
 	struct stat():
 		static startup	= DateTime.Now
 		static victims	= 0
 		static errors	= 0
+	class Config(Observable):
+		public max_necro	= 10
+		public muffled		= false
+		public inspect_on	= assembly.IsDynamic
+		public autosave 	= not assembly.IsDynamic
+		public autokill		= {"path": HashSet of string(), "title": HashSet of string()}
 
 	# --Methods goes here.
 	def constructor():
@@ -328,10 +384,11 @@ class Shooter(Δ):
 
 	def update() as Shooter:
 		icon.Text = "$name 「💀: $(stat.victims)」"
-		if inspect_on and Keys.RMenu.pressed() and Keys.ShiftKey.pressed():
+		if cfg.inspect_on and Keys.RMenu.pressed() and Keys.ShiftKey.pressed():
 			analyzer.update().Show()
 			Clipboard.SetText(analyzer.checkout) if Keys.Insert.GetKeyState() & 1
 		else: analyzer.Hide()
+		if cfg.autosave and cfg.changed: cfg.sync(cfg_file)
 		return self
 
 	private def setup_menu():
@@ -339,18 +396,18 @@ class Shooter(Δ):
 		def grep_targets():
 			cache = List of MenuItem()
 			for win in look_around():
-				owner = Path.GetFileNameWithoutExtension(win.owner.exe)
+				owner = Path.GetFileNameWithoutExtension(win.owner)
 				cache.Add(MenuItem("$owner:: " + win.title.either('<nil_title>', win.title), {shootdøwn(win)}))
 			return cache.GroupBy({x|x.Text}).Select({y|y.First()}).ToArray()
 		def grep_necro():
-			index		= 0
+			index	= 0
 			cache	= List of MenuItem()
 			for mortem as Collections.DictionaryEntry in necrologue:
 				kill_count as int, info as ProcInfo = mortem.Value, ProcInfo(mortem.Key as string)
-				cache.Add(tomb = MenuItem((kill_count > 1).either("", "「💀: $(kill_count)」 ") + info.exe))
+				cache.Add(tomb = MenuItem((kill_count > 1).either("", "「💀: $(kill_count)」 ") + info))
 				tomb.MenuItems.Add("Visit",		{x as ProcInfo|x.visit()}.bind(info))
 				tomb.MenuItems.Add("Purge",		{x as ProcInfo,i as int|necrologue.RemoveAt(i+x.purge().pid cast int)
-					if "Are you sure want to delete '$(x.exe)' ?".askbox()}.bind(info, index))
+					if "Are you sure want to delete '$(x)' ?".askbox()}.bind(info, index))
 				tomb.MenuItems.Add("Reraise",	{x as ProcInfo|x.reraise()}.bind(info))
 				index++
 			return cache.ToArray()
@@ -359,12 +416,15 @@ class Shooter(Δ):
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.047", "*" * 19,
+			"$name v0.05", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n')\
 			.msgbox(MessageBoxIcon.Information)})
-		items.Add("Muffle sounds",				{muffled=(not muffled)}).Checked = muffled
-		items.Add("Inspect on [r]Alt+Shift",	{inspect_on=(not inspect_on)}).Checked = inspect_on
+		items.Add("-")
+		# Settings block.
+		items.Add("Muffle sounds",				{cfg.muffled	= (not cfg.muffled)}	).Checked = cfg.muffled
+		items.Add("Inspect on [r]Alt+Shift",	{cfg.inspect_on	= (not cfg.inspect_on)}	).Checked = cfg.inspect_on
+		items.Add("Autosave configuration",		{cfg.autosave	= (not cfg.autosave)}	).Checked = cfg.autosave
 		items.Add("-")
 		# Alternative targeting and history.
 		if len(Ω = grep_targets()):	items.Add("Targets").MenuItems.AddRange(Ω)
@@ -382,15 +442,12 @@ class Shooter(Δ):
 
 	# Overloads.[
 	def shootdøwn(proc as ProcInfo):
-		return if proc.pid == my.pid or proc.pid == nil # Suicide is a mortal sin.
+		return if proc == me or proc.pid == nil # Suicide is a mortal sin.
 		try:
-			bang.Play() unless muffled
-			necrologue.upcount(proc.destroy().exe).cycle(max_necro)
+			bang.Play() unless cfg.muffled
+			necrologue.upcount(proc.destroy()).cycle(cfg.max_necro)
 			stat.victims++
-		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$(proc.exe)']")
-
-	def shootdøwn(victim as WinInfo):
-		shootdøwn(victim.owner)
+		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$proc']")
 
 	def shootdøwn(victim as uint):
 		shootdøwn(victim.winfo())
@@ -415,7 +472,15 @@ class Shooter(Δ):
 
 	private def lookup_doomed():
 		result = List of ProcInfo()
-		for proc in ProcInfo.all: result.AddRange(proc for path in autokill["path"] if path in proc.exe)
+		# Path lookup.
+		for proc in ProcInfo.all: result.AddRange(proc for path in cfg.autokill["path"] if path in proc.exe)
+		# Title lookup.
+		del = def(hwnd as IntPtr, x):
+			win = hwnd.winfo()
+			result.AddRange(win.owner for title in cfg.autokill["title"] if title in win.title)
+			return true
+		del.EnumWindows(nil)
+		# Finalization.
 		return result.GroupBy({x|x.pid}).Select({y|y.First()}).ToList()
 
 	[Extension]	static def lookup_title(title as string):
@@ -426,18 +491,16 @@ class Shooter(Δ):
 		return result
 
 	[Extension]	static def lookup_path(path as string):
-		return List of ProcInfo(proc for proc in path.either((,), ProcInfo.all) if path in proc.exe)
+		return List of ProcInfo(proc for proc in path.either((,), ProcInfo.all) if path in proc)
 
-	[Extension] static def info(pid as IntPtr):
-		return nil.winfo().owner if pid == nil
-		return ProcInfo(pid)
+	[Extension] static def info(pid as IntPtr): # nil for current window's owner.
+		return pid.either(nil.winfo().owner, ProcInfo(pid))
 
 	[Extension] static def info(pid as uint):
 		return IntPtr(pid).info()
 
-	[Extension] static def winfo(win_handle as IntPtr):
-		return WinInfo(POINT(Cursor.Position).WindowFromPoint()) if win_handle == nil
-		return WinInfo(win_handle)
+	[Extension] static def winfo(win_handle as IntPtr): # nil for current window.
+		return WinInfo(win_handle.either(POINT(Cursor.Position).WindowFromPoint(), win_handle))
 
 	[Extension] static def winfo(win_handle as uint):
 		return IntPtr(win_handle).winfo()
