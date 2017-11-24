@@ -258,11 +258,14 @@ class ProcInfo(Δ):
 		Process.Start(ProcessStartInfo(FileName: exe, WorkingDirectory: Path.GetDirectoryName(exe)))
 		return self
 
+	override def ToString():
+		return exe
+
 	static def op_Equality(x as ProcInfo, y as ProcInfo):
 		return x.pid == y.pid
 
 	static def op_Implicit(x as ProcInfo):
-		return x.exe
+		return "$x"
 
 	[Extension] static def locate(proc_handle as IntPtr):
 		proc_handle	= ProcessAccess.QueryLimitedInformation.OpenProcess(true, proc_handle)
