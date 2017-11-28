@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.05
+# Shootdøwn windows destroyer v0.055
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -10,6 +10,7 @@ import System.Linq
 import System.Drawing
 import System.Diagnostics
 import System.Windows.Forms
+import System.Security.Principal
 import System.Collections.Generic
 import System.Collections.Specialized
 import System.Runtime.InteropServices
@@ -111,12 +112,14 @@ abstract class API():
 		pass
 # -------------------- #
 abstract class Δ(API):
-	static final name					= "Shootdøwn"
-	static final postXP					= Environment.OSVersion.Version.Major >= 6
-	public static final win_title		= "💀|$name|💀"
-	public static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
-	public static final assembly		= Reflection.Assembly.GetExecutingAssembly()
-	public static final nil				= IntPtr.Zero
+	static final name			= "Shootdøwn"
+	static final postXP			= Environment.OSVersion.Version.Major >= 6
+	static final win_title		= "💀|$name|💀"
+	static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+	static final assembly		= Reflection.Assembly.GetExecutingAssembly()
+	static final nil			= IntPtr.Zero
+	static final gen_md5		= Security.Cryptography.MD5Cng()
+	static final is_admin = WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)
 
 	# --Methods goes here.
 	[Extension] static def either[of T, T2](val as T, false_val as T2, true_val as T2):
@@ -125,7 +128,7 @@ abstract class Δ(API):
 
 	[Extension] static def either[of T](val as string, false_val as T, true_val as T):
 		return either(val != '', false_val, true_val)
-	
+
 	[Extension] static def msgbox(text as string, icon as MessageBoxIcon, buttons as MessageBoxButtons):
 		return MessageBox.Show(text, win_title, buttons, icon)
 
@@ -178,6 +181,12 @@ abstract class Δ(API):
 	[Extension] static def bind(proc as callable, arg, arg2):
 		return {proc(arg, arg2)}
 
+	[Extension] static def hex(src as (byte)):
+		return join(x.ToString("x2") for x in src, "")
+
+	[Extension] static def file_md5(path as string):
+		return gen_md5.ComputeHash(File.OpenRead(path))		
+
 	def peek(name as string):
 		proto = GetType()
 		if prop = proto.GetProperty(name): return prop.GetValue(self, null)
@@ -200,6 +209,7 @@ abstract class Δ(API):
 abstract class Observable(Δ):
 	private Δprev_state = json
 
+	# --Methods goes here.
 	def constructor():
 		pass
 
@@ -232,10 +242,13 @@ abstract class Observable(Δ):
 		get: return json != Δprev_state
 # -------------------- #
 class ProcInfo(Δ):
+	private md5_hash as (byte)
 	public final exe as string
 	public final pid as IntPtr
 	public final taken = DateTime.Now
+	public static final current	= ProcInfo(IntPtr(Process.GetCurrentProcess().Id))
 
+	# --Methods goes here.
 	def constructor(proc_id as IntPtr):
 		pid	= proc_id
 		exe	= pid.locate()
@@ -284,6 +297,16 @@ class ProcInfo(Δ):
 		Process.GetProcessById(pid cast int).Kill()
 		return self
 
+	md5_raw:
+		get:
+			if md5_hash: return md5_hash
+			try: return md5_hash = exe.file_md5()
+			except: pass
+
+	md5:
+		get:
+			return raw.hex() if raw = md5_raw
+
 	static all_pids:
 		get:
 			copied as uint, Δ as int = 0, sizeof(uint)
@@ -293,18 +316,25 @@ class ProcInfo(Δ):
 
 	static all:
 		get: return all_pids.Select({x|ProcInfo(IntPtr(x))})
+
+	static none:
+		get: return List of ProcInfo()
 # -------------------- #
 class WinInfo(Δ):
 	public final id		as IntPtr
 	public final owner	as ProcInfo
 	public final taken	= DateTime.Now
 
+	# --Methods goes here.
 	def constructor(win_handle as IntPtr):
 		id		= win_handle
 		owner 	= ProcInfo.from_win(id)
 
 	static def op_Implicit(x as WinInfo):
 		return x.owner
+
+	static def op_Implicit(x as WinInfo) as string:
+		return x.title
 
 	[Extension] static def identify(win_handle as IntPtr):
 		result	= StringBuilder(max = 256)
@@ -313,13 +343,26 @@ class WinInfo(Δ):
 
 	title:
 		get: return id.identify()
+
+	visible:
+		get: return id.IsWindowVisible()
+
+	static all:
+		get:
+			result = List of WinInfo()
+			{hwnd, x|result.Add(WinInfo(hwnd)); return true}.EnumWindows(nil)
+			return result
+
+	static none:
+		get: return List of WinInfo()
 # -------------------- #
 class InspectorWin(Form):
 	final host as Shooter
 	final info = Collections.Generic.Dictionary[of string, Label]()
 	final flow = FlowLayoutPanel(FlowDirection: FlowDirection.TopDown, AutoSize: true, Size: Size(0, 0),
-			Margin: Padding(0, 0, 0, 0))
+		AutoSizeMode: AutoSizeMode.GrowAndShrink, Margin: Padding(0, 0, 0, 0))
 
+	# --Methods goes here.
 	def constructor(base as Shooter):
 		# Primary setup operations.
 		host									= base
@@ -328,7 +371,7 @@ class InspectorWin(Form):
 		Size, AutoSize, BackColor				= Size(0, 0), true, Color.FromArgb(30, 30, 30)
 		# Controls setup.
 		Controls.Add(flow)
-		for label, id in (("●「proc」:", "path"), ("●「win」:", "win"),  ("●「pid」:", "pid")):
+		for label, id in (("●「proc」:", "path"), ("●「md5」:", "md5"), ("●「win」:", "win"),  ("●「pid」:", "pid")):
 			flow.Controls.Add(line = FlowLayoutPanel(FlowDirection: FlowDirection.LeftToRight, AutoSize: true,
 				Margin: Padding(0, 0, 0, 0)))
 			line.Controls.Add(Label(Text: label, ForeColor: Color.Cyan, AutoSize: true))
@@ -347,19 +390,42 @@ class InspectorWin(Form):
 		Location			= Cursor.Position
 		pinfo				= host.info(0)
 		info['path'].Text	= pinfo
+		info['md5'].Text	= pinfo.md5
 		info['win'].Text	= host.target.id.ToString()
 		info['pid'].Text	= pinfo.pid.ToString()
 		flow.Location		= Point((Height - flow.Height) / 2 + 1, (Width - flow.Width) / 2 + 1)
 		return self
 
 	checkout:
-		get: return join(info.Values.Select({x|x.Text}), '\n')
+		get: return join(info.Values.Select({x|x.Text}), ' | ')
+# -------------------- #
+class AutoKillerWin(Form):
+	final host as Shooter
+
+	# --Methods goes here.
+	def constructor(base as Shooter):
+		if base.autokill_win: base.autokill_win.Activate(); return
+		super()
+		host = base
+		# Finalization.
+		host.autokill_win = self
+		Closed += {destroy}
+		Show()
+
+	def feedback():
+		pass
+
+	def destroy():
+		host.autokill_win = null
+		Dispose()
+		return self
 # -------------------- #
 class Shooter(Δ):
+	public autokill_win as AutoKillerWin
+	final me			= ProcInfo.current
 	final cfg			= Config().load(cfg_file) as Config
-	final me			= Process.GetCurrentProcess().Handle.info()
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
-	final ak_timer		= Timer(Enabled: true, Interval: 1000, Tick: {shootdøwn(lookup_doomed())})
+	final ak_timer		= Timer(Enabled: true, Interval: 3000, Tick: {shootdøwn(lookup_doomed())})
 	final upd_timer		= Timer(Enabled: true, Interval: 100, Tick: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|shootdøwn() if e.Msg == 0x0312})
 	final bang			= Media.SoundPlayer("shoot.wav".find_res())
@@ -376,7 +442,7 @@ class Shooter(Δ):
 		public muffled		= false
 		public inspect_on	= assembly.IsDynamic
 		public autosave 	= not assembly.IsDynamic
-		public autokill		= {"path": HashSet of string(), "title": HashSet of string()}
+		public autokill		= {"path": HashSet of string(), "title": HashSet of string(), "md5": HashSet of string()}
 
 	# --Methods goes here.
 	def constructor():
@@ -419,7 +485,7 @@ class Shooter(Δ):
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.05", "*" * 19,
+			"$name v0.055", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n')\
 			.msgbox(MessageBoxIcon.Information)})
@@ -436,12 +502,18 @@ class Shooter(Δ):
 		sub.Add("Target by win id...",		{shootdøwn("Input window ID to destroy:".request(0))})
 		sub.Add("Target by proc id...",		{shootdøwn_pid("Input process ID to destroy:".request(0))})
 		sub.Add("Target by win title...",	{shootdøwn("Input window title to destroy:".request("").lookup_title())})
-		sub.Add("Target by proc path...",	{shootdøwn("Input process path to destroy:".request("").lookup_path())})
+		sub.Add("Target by proc path...",	{shootdøwn("Input .exe path to destroy:".request("").lookup_path())})
+		sub.Add("Target by exe md5...",		{shootdøwn("Input .exe MD5 to destroy:".request("").lookup_md5())})
 		items.Add("Tombstones").MenuItems.AddRange(grep_necro()) if necrologue.Count
+		items.Add("Setup auto-kill...", {setup_ak}) if false # Later, dear firends.
 		items.Add("-")
-		# Termination.
+		# Elevation & termination.
+		items.Add("Elevate privileges", {elevate()}) unless is_admin
 		items.Add("Terminate", {destroy})
 		return self
+
+	def setup_ak():
+		AutoKillerWin(self)
 
 	# Overloads.[
 	def shootdøwn(proc as ProcInfo):
@@ -453,10 +525,10 @@ class Shooter(Δ):
 		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$proc']")
 
 	def shootdøwn(victim as uint):
-		shootdøwn(victim.winfo())
+		shootdøwn(victim.winfo()) if victim
 
-	def shootdøwn(procs as List of ProcInfo):
-		for proc in procs: shootdøwn(proc)
+	def shootdøwn(victims as List of ProcInfo):
+		for x in victims: shootdøwn(x)
 
 	def shootdøwn(victims as List of WinInfo):
 		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
@@ -465,36 +537,38 @@ class Shooter(Δ):
 		shootdøwn(target)
 
 	def shootdøwn_pid(pid as uint):
-		shootdøwn(pid.info())
+		shootdøwn(pid.info()) if pid
 	# ].Overloads
 
+	def elevate():
+		try:
+			Process.Start(ProcessStartInfo(FileName: me.exe, WorkingDirectory:Path.GetDirectoryName(me.exe),
+				UseShellExecute: true, Verb: "runas"))
+			return destroy()
+		except ex as ComponentModel.Win32Exception: "Elevation request was rejected.".errorbox(); return self
+
 	static def look_around():
-		result = List of WinInfo()
-		{hwnd as IntPtr, x|result.Add(WinInfo(hwnd)) if hwnd.IsWindowVisible(); return true}.EnumWindows(nil)
-		return result
+		return WinInfo.all.Where({x|x.visible}).ToList()
 
 	private def lookup_doomed():
 		result = List of ProcInfo()
-		# Path lookup.
-		for proc in ProcInfo.all: result.AddRange(proc for path in cfg.autokill["path"] if path in proc.exe)
-		# Title lookup.
-		del = def(hwnd as IntPtr, x):
-			win = hwnd.winfo()
-			result.AddRange(win.owner for title in cfg.autokill["title"] if title in win.title)
-			return true
-		del.EnumWindows(nil)
-		# Finalization.
+		for win in WinInfo.all:	result.AddRange(win.owner for title in cfg.autokill["title"] if title in win.title)
+		for proc in ProcInfo.all:
+			result.AddRange(proc for path	in cfg.autokill["path"]	if path	in proc.exe)
+			result.AddRange(proc for md5	in cfg.autokill["md5"]	if md5	== proc.md5)
 		return result.GroupBy({x|x.pid}).Select({y|y.First()}).ToList()
 
 	[Extension]	static def lookup_title(title as string):
-		result = List of WinInfo()
-		if title:
-			{hwnd as IntPtr, x|result.Add(hwnd.winfo()) if title in hwnd.winfo().title; return true}\
-			.EnumWindows(nil)
-		return result
+		return WinInfo.none unless title
+		return WinInfo.all.Where({x|title in x}).ToList()
 
 	[Extension]	static def lookup_path(path as string):
-		return List of ProcInfo(proc for proc in path.either((,), ProcInfo.all) if path in proc)
+		return ProcInfo.none unless path
+		return ProcInfo.all.Where({x|path in x}).ToList()
+
+	[Extension]	static def lookup_md5(md5 as string):
+		return ProcInfo.none unless (md5 = md5.Trim().ToLower()).Length == 32
+		return ProcInfo.all.Where({x|x.md5 == md5}).ToList()
 
 	[Extension] static def info(pid as IntPtr): # nil for current window's owner.
 		return pid.either(nil.winfo().owner, ProcInfo(pid))
