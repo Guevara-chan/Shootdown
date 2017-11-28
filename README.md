@@ -9,7 +9,7 @@ Just press _Alt+Shift+F4_ any time to instantly send that thing under your mouse
 - Menu-based targeting for any visible window registered by OS.
 - Hotkey-based targeting for window under cursor (_Alt+Shift+F4_).
 - Automatized kill listing with different targeting options provided.
-- Auxiliary targeting options: window id, proccess id, title fragment and exe path fragment.
+- Auxiliary targeting options: window id, proccess id, title fragment, exe path fragment and exe md5 hashcode.
 - Extensive history list with additional post-termination options: reraise process, delete exe, open in explorer.
 
 # 「Reassembling」
