@@ -291,10 +291,6 @@ class ProcInfo(Δ):
 
 	override def ToString():
 		return exe
-#####################################################
-	static def op_Implicit(x as uint):
-		return IntPtr(x)
-#####################################################
 
 	static def op_Equality(x as ProcInfo, y as ProcInfo):
 		return x.pid == y.pid
@@ -393,10 +389,10 @@ class InspectorWin(Form):
 		Size, AutoSize, BackColor				= Size(0, 0), true, Color.FromArgb(30, 30, 30)
 		# Controls setup.
 		Controls.Add(flow)
-		for label, id in (("●「proc」:", "path"), ("●「md5」:", "md5"), ("●「win」:", "win"),  ("●「pid」:", "pid")):
+		for id in "proc", "md5", "win", "pid":
 			flow.Controls.Add(line = FlowLayoutPanel(FlowDirection: FlowDirection.LeftToRight, AutoSize: true,
 				Margin: Padding(0, 0, 0, 0)))
-			line.Controls.Add(Label(Text: label, ForeColor: Color.Cyan, AutoSize: true))
+			line.Controls.Add(Label(Text: "●「$(id)」:", ForeColor: Color.Cyan, AutoSize: true))
 			info[id] = Label(ForeColor: Color.Coral, AutoSize: true, Size: Size(0, 0), 
 				Margin: Padding(0, 0, 0, 0))
 			line.Controls.Add(info[id])
@@ -411,7 +407,7 @@ class InspectorWin(Form):
 	def update() as InspectorWin:
 		Location			= Cursor.Position
 		pinfo				= host.target.owner
-		info['path'].Text	= pinfo
+		info['proc'].Text	= pinfo
 		info['md5'].Text	= pinfo.md5
 		info['win'].Text	= host.target.id.ToString()
 		info['pid'].Text	= pinfo.pid.ToString()
