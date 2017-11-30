@@ -154,6 +154,9 @@ abstract class Δ(API):
 				except ex: "Invalid input proveded !".errorbox()
 			else: return default
 
+	[Extension] static def request(text as string) as string:
+		return request(text, "")
+
 	[Extension] static def try_lock(lock_name as string):
 		unique as bool
 		mutex = Threading.Mutex(true, lock_name, unique)
@@ -181,11 +184,26 @@ abstract class Δ(API):
 	[Extension] static def bind(proc as callable, arg, arg2):
 		return {proc(arg, arg2)}
 
+	[Extension] static def ptr[of T](addr as T):
+		alfa as uint = Convert.ChangeType(addr, uint)
+		return IntPtr(alfa)
+
 	[Extension] static def hex(src as (byte)):
 		return join(x.ToString("x2") for x in src, "")
 
 	[Extension] static def file_md5(path as string):
 		return gen_md5.ComputeHash(File.OpenRead(path))		
+
+	[Extension] static def unhex(text as string):
+		index	= 0
+		text	= /[^0-9^a-f]/.Replace(text.ToLower(), "")
+		accum	= StringBuilder(2)
+		result	= array(byte, text.Length / 2)
+		if text.Length % 2: text = "0" + text 
+		for c in text:
+			accum.Append(c)
+			if accum.Length == 2: result[index++] = Convert.ToInt32(accum.ToString(), 16); accum.Clear()
+		return result
 
 	def peek(name as string):
 		proto = GetType()
@@ -246,7 +264,7 @@ class ProcInfo(Δ):
 	public final exe as string
 	public final pid as IntPtr
 	public final taken = DateTime.Now
-	public static final current	= ProcInfo(IntPtr(Process.GetCurrentProcess().Id))
+	public static final current	= ProcInfo(Process.GetCurrentProcess().Id.ptr())
 
 	# --Methods goes here.
 	def constructor(proc_id as IntPtr):
@@ -273,6 +291,10 @@ class ProcInfo(Δ):
 
 	override def ToString():
 		return exe
+#####################################################
+	static def op_Implicit(x as uint):
+		return IntPtr(x)
+#####################################################
 
 	static def op_Equality(x as ProcInfo, y as ProcInfo):
 		return x.pid == y.pid
@@ -315,7 +337,7 @@ class ProcInfo(Δ):
 			return pids[:copied/Δ]
 
 	static all:
-		get: return all_pids.Select({x|ProcInfo(IntPtr(x))})
+		get: return all_pids.Select({x|ProcInfo(x.ptr())})
 
 	static none:
 		get: return List of ProcInfo()
@@ -388,7 +410,7 @@ class InspectorWin(Form):
 
 	def update() as InspectorWin:
 		Location			= Cursor.Position
-		pinfo				= host.info(0)
+		pinfo				= host.target.owner
 		info['path'].Text	= pinfo
 		info['md5'].Text	= pinfo.md5
 		info['win'].Text	= host.target.id.ToString()
@@ -501,9 +523,11 @@ class Shooter(Δ):
 		sub = items.Add("Auxiliary").MenuItems
 		sub.Add("Target by win id...",		{shootdøwn("Input window ID to destroy:".request(0))})
 		sub.Add("Target by proc id...",		{shootdøwn_pid("Input process ID to destroy:".request(0))})
-		sub.Add("Target by win title...",	{shootdøwn("Input window title to destroy:".request("").lookup_title())})
-		sub.Add("Target by proc path...",	{shootdøwn("Input .exe path to destroy:".request("").lookup_path())})
-		sub.Add("Target by exe md5...",		{shootdøwn("Input .exe MD5 to destroy:".request("").lookup_md5())})
+		sub.Add("-")
+		sub.Add("Target by win title..",	{shootdøwn("Input window title to destroy:".request().lookup_title())})
+		sub.Add("Target by proc path..",	{shootdøwn("Input module exepath to destroy:".request().lookup_path())})
+		sub.Add("-")
+		sub.Add("Target by exe md5...",		{shootdøwn("Input main module MD5 to destroy:".request().lookup_md5())})
 		items.Add("Tombstones").MenuItems.AddRange(grep_necro()) if necrologue.Count
 		items.Add("Setup auto-kill...", {setup_ak}) if false # Later, dear firends.
 		items.Add("-")
@@ -525,7 +549,7 @@ class Shooter(Δ):
 		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$proc']")
 
 	def shootdøwn(victim as uint):
-		shootdøwn(victim.winfo()) if victim
+		shootdøwn(WinInfo(victim.ptr())) if victim
 
 	def shootdøwn(victims as List of ProcInfo):
 		for x in victims: shootdøwn(x)
@@ -537,12 +561,12 @@ class Shooter(Δ):
 		shootdøwn(target)
 
 	def shootdøwn_pid(pid as uint):
-		shootdøwn(pid.info()) if pid
+		shootdøwn(ProcInfo(pid.ptr())) if pid
 	# ].Overloads
 
 	def elevate():
 		try:
-			Process.Start(ProcessStartInfo(FileName: me.exe, WorkingDirectory:Path.GetDirectoryName(me.exe),
+			Process.Start(ProcessStartInfo(FileName: me.exe, WorkingDirectory: Path.GetDirectoryName(me.exe),
 				UseShellExecute: true, Verb: "runas"))
 			return destroy()
 		except ex as ComponentModel.Win32Exception: "Elevation request was rejected.".errorbox(); return self
@@ -567,23 +591,11 @@ class Shooter(Δ):
 		return ProcInfo.all.Where({x|path in x}).ToList()
 
 	[Extension]	static def lookup_md5(md5 as string):
-		return ProcInfo.none unless (md5 = md5.Trim().ToLower()).Length == 32
-		return ProcInfo.all.Where({x|x.md5 == md5}).ToList()
-
-	[Extension] static def info(pid as IntPtr): # nil for current window's owner.
-		return pid.either(nil.winfo().owner, ProcInfo(pid))
-
-	[Extension] static def info(pid as uint):
-		return IntPtr(pid).info()
-
-	[Extension] static def winfo(win_handle as IntPtr): # nil for current window.
-		return WinInfo(win_handle.either(POINT(Cursor.Position).WindowFromPoint(), win_handle))
-
-	[Extension] static def winfo(win_handle as uint):
-		return IntPtr(win_handle).winfo()
+		return ProcInfo.none unless (sample = md5.unhex()).Length == 16
+		return ProcInfo.all.Where({x|x.md5_raw == sample}).ToList()
 
 	target:
-		get: return nil.winfo()
+		get: return WinInfo(POINT(Cursor.Position).WindowFromPoint())
 
 	def destroy():
 		icon.Visible = false; Application.Exit()
