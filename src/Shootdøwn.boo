@@ -25,7 +25,6 @@ abstract class API():
 		Color = 1
 		Alpha = 2
 
-
 	[Flags] enum KeyModifier:
 		None	= 0
 		Alt		= 1
@@ -278,12 +277,13 @@ abstract class Observable(Δ):
 		get: return self != Δprev_state
 # -------------------- #
 abstract class AuxWindow(Form):
-	public static final click_through	= 0x80000 | 0x20
-	public static final AllLayers		= 3
+	protected static final click_through	= 0x80000 | 0x20
+	protected static final AllLayers		= 3
 
 	# --Methods goes here.
 	def init(opacity as decimal):
 		ex_style, α = ex_style | click_through, opacity
+		return self
 
 	private layer_flags:
 		get:
@@ -460,11 +460,11 @@ class InspectorWin(AuxWindow):
 class Decal(AuxWindow):
 	final timer			= Timer(Enabled: true, Interval: 2000, Tick: {tick})
 	static final atlas	= Bitmap(Δ.find_res("decal.png"))
-	static final dim	= Point(6, 2)
+	static final dim	= Point(5, 2)
 	static final rnd	= Random()
-	private final img	= PictureBox(Width: atlas.Width / dim.X, Height: atlas.Height / dim.Y)
+	private final img	= PictureBox(Width: atlas.Width/ 1.0 /dim.X, Height: atlas.Height/ 1.0 /dim.Y)
 
-	def constructor():
+	def constructor(origin as Point):
 		# Primary setup operations.
 		TopMost, ShowInTaskbar, FormBorderStyle = true, false, FormBorderStyle.None
 		StartPosition, Size						= FormStartPosition.Manual, Size(140, 140)
@@ -475,9 +475,8 @@ class Decal(AuxWindow):
 		img.Location	= Point((Width - img.Width) / 2, (Height - img.Height) / 2)
 		Controls.Add(img)
 		# Finalization.
-		init(1)
-		color_key	= BackColor = Color.DimGray
-		Location	= Point(Cursor.Position.X - Width / 2, Cursor.Position.Y - Height / 2)
+		init(1).color_key	= BackColor = Color.DarkSlateGray
+		Location			= Point(origin.X - Width / 2, origin.Y - Height / 2)
 		Show()
 
 	def tick():
@@ -617,11 +616,11 @@ class Shooter(Δ):
 		try:
 			bang.Play() unless cfg.muffled
 			necrologue.upcount(proc.destroy()).cycle(cfg.max_necro)
-			stat.victims++
+			return stat.victims++ >= 0			
 		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$proc']")
 
 	def shootdøwn(victim as uint):
-		shootdøwn(WinInfo(victim.ptr())) if victim
+		return shootdøwn(WinInfo(victim.ptr())) if victim
 
 	def shootdøwn(victims as IEnumerable of ProcInfo):
 		for x in victims: shootdøwn(x)
@@ -630,11 +629,12 @@ class Shooter(Δ):
 		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
 
 	def shootdøwn():
-		shootdøwn(target)
-		Decal() unless cfg.hide_holes
+		if result = shootdøwn(target):
+			Decal(Cursor.Position) unless cfg.hide_holes
+			return result
 
 	def shootdøwn_pid(pid as uint):
-		shootdøwn(ProcInfo(pid.ptr())) if pid
+		return shootdøwn(ProcInfo(pid.ptr())) if pid
 	# ].Overloads
 
 	def elevate():
