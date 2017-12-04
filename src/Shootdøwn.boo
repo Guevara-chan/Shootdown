@@ -355,10 +355,6 @@ class ProcInfo(Δ):
 		win_handle.GetWindowThreadProcessId(pid)
 		return ProcInfo(pid)
 
-	def destroy():
-		Process.GetProcessById(pid cast int).Kill()
-		return self
-
 	md5_raw:
 		get:
 			if md5_hash: return md5_hash
@@ -381,6 +377,10 @@ class ProcInfo(Δ):
 
 	static none:
 		get: return List of ProcInfo()
+
+	def destroy():
+		Process.GetProcessById(pid cast int).Kill()
+		return self
 # -------------------- #
 class WinInfo(Δ):
 	public final id		as IntPtr
