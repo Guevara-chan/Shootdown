@@ -4,6 +4,7 @@ Just press _Alt+Shift+F4_ any time to instantly send that thing under your mouse
   
 # 「Featuræ」
 - Traybar GUI with deactivable sound.
+- Relaxating bullet holes post-effect.
 - Lightweight JSON configuaration support.
 - Built-in info explorer with clipboard hotkey (_Alt+Shift+Ins_).
 - Menu-based targeting for any visible window registered by OS.
