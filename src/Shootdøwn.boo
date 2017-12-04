@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.055
+# Shootdøwn windows destroyer v0.06
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -21,6 +21,11 @@ import System.Web.Script.Serialization from System.Web.Extensions
 #.{ [Classes]
 abstract class API():
 	# --Auxilary definitions.
+	[Flags] enum Layer:
+		Color = 1
+		Alpha = 2
+
+
 	[Flags] enum KeyModifier:
 		None	= 0
 		Alt		= 1
@@ -89,8 +94,12 @@ abstract class API():
 	[Extension]	static def SetWindowLong(hWnd as IntPtr, nIndex as GWL, dwNewLong as int) as int:
 		pass
 	[DllImport("user32.dll")]
-	[Extension]	static def SetLayeredWindowAttributes(hWnd as IntPtr, crKey as int, alpha as byte, 
+	[Extension]	static def SetLayeredWindowAttributes(hWnd as IntPtr, crKey as uint, bAlpha as byte, 
 		dwFlags as int) as bool:
+		pass
+	[DllImport("user32.dll")] 
+	[Extension]	static def GetLayeredWindowAttributes(hwnd as IntPtr, ref crKey as uint, ref bAlpha as byte, 
+		ref dwFlags as int) as bool:
 		pass
 	[DllImport("kernel32.dll")]
 	[Extension]	static def OpenProcess(Access as ProcessAccess, bInheritHnd as bool, Id as IntPtr) as IntPtr:
@@ -178,6 +187,9 @@ abstract class Δ(API):
 	[Extension] static def pressed(key as Keys):
 		return (key.GetKeyState() & 0x10000000)
 
+	[Extension] static def file_md5(path as string):
+		return gen_md5.ComputeHash(File.OpenRead(path))	
+
 	[Extension] static def bind(proc as callable, arg):
 		return {proc(arg)}
 
@@ -188,11 +200,11 @@ abstract class Δ(API):
 		alfa as uint = Convert.ChangeType(addr, uint)
 		return IntPtr(alfa)
 
+	[Extension] static def invert(ref val as bool):
+		return val = (not val)
+
 	[Extension] static def hex(src as (byte)):
 		return join(x.ToString("x2") for x in src, "")
-
-	[Extension] static def file_md5(path as string):
-		return gen_md5.ComputeHash(File.OpenRead(path))		
 
 	[Extension] static def unhex(text as string):
 		index	= 0
@@ -231,6 +243,9 @@ abstract class Observable(Δ):
 	def constructor():
 		pass
 
+	static def op_Implicit(x as Observable):
+		return "$x"
+
 	def load(path as string):
 		try:
 			if File.Exists(path): json = File.ReadAllText(path)
@@ -238,13 +253,16 @@ abstract class Observable(Δ):
 		return sync()
 
 	def sync():
-		Δprev_state = json
+		Δprev_state = self
 		return self
 
 	def sync(path as string):
-		try: File.WriteAllText(path, sync().json)
+		try: File.WriteAllText(path, sync())
 		except ex: ex.errorbox()
 		return self
+
+	override def ToString():
+		return json
 
 	[ScriptIgnoreAttribute]	json:
 		get: return JavaScriptSerializer().Serialize(self)
@@ -257,7 +275,33 @@ abstract class Observable(Δ):
 				else: poke(entry.Key, entry.Value)
 
 	[ScriptIgnoreAttribute]	changed:
-		get: return json != Δprev_state
+		get: return self != Δprev_state
+# -------------------- #
+abstract class AuxWindow(Form):
+	public static final click_through	= 0x80000 | 0x20
+	public static final AllLayers		= 3
+
+	# --Methods goes here.
+	def init(opacity as decimal):
+		ex_style, α = ex_style | click_through, opacity
+
+	private layer_flags:
+		get:
+			alpha as byte = color = (flags = 0) cast uint
+			API.GetLayeredWindowAttributes(Handle, color, alpha, flags)
+			return Tuple.Create(color, alpha)
+
+	ex_style:
+		get: return API.GetWindowLong(Handle, API.GWL.ExStyle)
+		set: API.SetWindowLong(Handle, API.GWL.ExStyle, value)
+
+	α as decimal:
+		get: return layer_flags.Item2 / 255.0
+		set: API.SetLayeredWindowAttributes(Handle, layer_flags.Item1, (255 * value) cast byte, AllLayers)
+
+	color_key:
+		get: return ColorTranslator.FromWin32(layer_flags.Item1)
+		set: API.SetLayeredWindowAttributes(Handle, ColorTranslator.ToWin32(value), layer_flags.Item2, AllLayers)
 # -------------------- #
 class ProcInfo(Δ):
 	private md5_hash as (byte)
@@ -374,7 +418,7 @@ class WinInfo(Δ):
 	static none:
 		get: return List of WinInfo()
 # -------------------- #
-class InspectorWin(Form):
+class InspectorWin(AuxWindow):
 	final host as Shooter
 	final info = Collections.Generic.Dictionary[of string, Label]()
 	final flow = FlowLayoutPanel(FlowDirection: FlowDirection.TopDown, AutoSize: true, Size: Size(0, 0),
@@ -399,25 +443,54 @@ class InspectorWin(Form):
 		# Additional aligning.
 		align = info.Values.Select({x|x.Location.X}).Max()
 		info.Values.ToList().ForEach({x|x.Margin = Padding(align - x.Location.X, 0, 0, 0)})
-		# API styling setup.
-		style = API.GetWindowLong(Handle, API.GWL.ExStyle) | 0x80000 | 0x20
-		API.SetWindowLong(Handle, API.GWL.ExStyle, style)
-		API.SetLayeredWindowAttributes(Handle, 0, 245, 0x2)
+		# Finalization
+		init(0.95)
 
 	def update() as InspectorWin:
 		Location			= Cursor.Position
 		pinfo				= host.target.owner
-		info['proc'].Text	= pinfo
-		info['md5'].Text	= pinfo.md5
-		info['win'].Text	= host.target.id.ToString()
-		info['pid'].Text	= pinfo.pid.ToString()
+		for id, feed in ('proc', pinfo), ('md5', pinfo.md5), ("win", host.target.id), ("pid", pinfo.pid): 
+			info[id].Text	= feed.ToString()
 		flow.Location		= Point((Height - flow.Height) / 2 + 1, (Width - flow.Width) / 2 + 1)
 		return self
 
 	checkout:
 		get: return join(info.Values.Select({x|x.Text}), ' | ')
 # -------------------- #
+class Decal(AuxWindow):
+	final timer			= Timer(Enabled: true, Interval: 2000, Tick: {tick})
+	static final atlas	= Bitmap(Δ.find_res("decal.png"))
+	static final dim	= Point(6, 2)
+	static final rnd	= Random()
+	private final img	= PictureBox(Width: atlas.Width / dim.X, Height: atlas.Height / dim.Y)
+
+	def constructor():
+		# Primary setup operations.
+		TopMost, ShowInTaskbar, FormBorderStyle = true, false, FormBorderStyle.None
+		StartPosition, Size						= FormStartPosition.Manual, Size(140, 140)
+		# Backgtound setup.
+		img.Image		= atlas.Clone(
+			Rectangle(img.Width * rnd.Next(dim.X), img.Height * rnd.Next(dim.Y), img.Width, img.Height),
+			atlas.PixelFormat)
+		img.Location	= Point((Width - img.Width) / 2, (Height - img.Height) / 2)
+		Controls.Add(img)
+		# Finalization.
+		init(1)
+		color_key	= BackColor = Color.DimGray
+		Location	= Point(Cursor.Position.X - Width / 2, Cursor.Position.Y - Height / 2)
+		Show()
+
+	def tick():
+		timer.Interval = 25
+		if α > (d = 0.05): α -= d
+		else: destroy()
+
+	def destroy():
+		timer.Dispose()
+		Dispose()
+# -------------------- #
 class AutoKillerWin(Form):
+	# TODO: Implement me, damn it.
 	final host as Shooter
 
 	# --Methods goes here.
@@ -458,6 +531,7 @@ class Shooter(Δ):
 	class Config(Observable):
 		public max_necro	= 10
 		public muffled		= false
+		public hide_holes	= false
 		public inspect_on	= assembly.IsDynamic
 		public autosave 	= not assembly.IsDynamic
 		public autokill		= {"path": HashSet of string(), "title": HashSet of string(), "md5": HashSet of string()}
@@ -503,15 +577,17 @@ class Shooter(Δ):
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.055", "*" * 19,
+			"$name v0.06", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n')\
 			.msgbox(MessageBoxIcon.Information)})
 		items.Add("-")
 		# Settings block.
-		items.Add("Muffle sounds",				{cfg.muffled	= (not cfg.muffled)}	).Checked = cfg.muffled
-		items.Add("Inspect on [r]Alt+Shift",	{cfg.inspect_on	= (not cfg.inspect_on)}	).Checked = cfg.inspect_on
-		items.Add("Autosave configuration",		{cfg.autosave	= (not cfg.autosave)}	).Checked = cfg.autosave
+		items.Add("Muffle sounds",				{cfg.muffled.invert()}		).Checked = cfg.muffled
+		items.Add("Hide bullet holes",			{cfg.hide_holes.invert()}	).Checked = cfg.hide_holes
+		items.Add("Inspect on [r]Alt+Shift",	{cfg.inspect_on.invert()}	).Checked = cfg.inspect_on
+		items.Add("Autosave configuration",	
+						{File.Delete(cfg_file) unless cfg.autosave.invert()}).Checked = cfg.autosave
 		items.Add("-")
 		# Alternative targeting and history.
 		if len(Ω = grep_targets()):	items.Add("Targets").MenuItems.AddRange(Ω)
@@ -547,14 +623,15 @@ class Shooter(Δ):
 	def shootdøwn(victim as uint):
 		shootdøwn(WinInfo(victim.ptr())) if victim
 
-	def shootdøwn(victims as List of ProcInfo):
+	def shootdøwn(victims as IEnumerable of ProcInfo):
 		for x in victims: shootdøwn(x)
 
-	def shootdøwn(victims as List of WinInfo):
+	def shootdøwn(victims as IEnumerable of WinInfo):
 		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
 
 	def shootdøwn():
 		shootdøwn(target)
+		Decal() unless cfg.hide_holes
 
 	def shootdøwn_pid(pid as uint):
 		shootdøwn(ProcInfo(pid.ptr())) if pid
@@ -568,7 +645,7 @@ class Shooter(Δ):
 		except ex as ComponentModel.Win32Exception: "Elevation request was rejected.".errorbox(); return self
 
 	static def look_around():
-		return WinInfo.all.Where({x|x.visible}).ToList()
+		return WinInfo.all.Where({x|x.visible})
 
 	private def lookup_doomed():
 		result = List of ProcInfo()
@@ -576,19 +653,19 @@ class Shooter(Δ):
 		for proc in ProcInfo.all:
 			result.AddRange(proc for path	in cfg.autokill["path"]	if path	in proc.exe)
 			result.AddRange(proc for md5	in cfg.autokill["md5"]	if md5	== proc.md5)
-		return result.GroupBy({x|x.pid}).Select({y|y.First()}).ToList()
+		return result.GroupBy({x|x.pid}).Select({y|y.First()})
 
 	[Extension]	static def lookup_title(title as string):
 		return WinInfo.none unless title
-		return WinInfo.all.Where({x|title in x}).ToList()
+		return WinInfo.all.Where({x|title in x})
 
 	[Extension]	static def lookup_path(path as string):
 		return ProcInfo.none unless path
-		return ProcInfo.all.Where({x|path in x}).ToList()
+		return ProcInfo.all.Where({x|path in x})
 
 	[Extension]	static def lookup_md5(md5 as string):
 		return ProcInfo.none unless (sample = md5.unhex()).Length == 16
-		return ProcInfo.all.Where({x|x.md5_raw == sample}).ToList()
+		return ProcInfo.all.Where({x|x.md5_raw == sample})
 
 	target:
 		get: return WinInfo(POINT(Cursor.Position).WindowFromPoint())

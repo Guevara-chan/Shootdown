@@ -5,7 +5,7 @@ set tmp_exe=Shootdøwn.exe
 set util_root=C:/Utils
 
 if exist %tmp_exe% ( del %tmp_exe% )
-%util_root%/[dot]Net/Boo/bin/booc.exe -embedres:shoot.wav,shoot.wav -debug- Shootdøwn.boo
+%util_root%/[dot]Net/Boo/bin/booc.exe -embedres:shoot.wav,shoot.wav -embedres:decal.png,decal.png -debug- Shootdøwn.boo
 
 if exist %tmp_exe% (
 %util_root%/Misc/ResHacker/ResourceHacker.exe -open %tmp_exe% -save %tmp_exe% -action addoverwrite -resource icon.ico -mask ICONGROUP, MAINICON, 0
