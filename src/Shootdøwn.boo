@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.06
+# Shootdøwn windows destroyer v0.061
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -48,13 +48,13 @@ abstract class API():
 		Synchronize				= 0x00100000
 
 	enum GWL:
-     	WndProc		= -4
-     	hInstance	= -6
-     	hWndParent	= -8
-     	Style		= -16
-     	ExStyle		= -20
-     	UserData	= -21
-     	ID			= -12
+		WndProc		= -4
+		hInstance	= -6
+		hWndParent	= -8
+		Style		= -16
+		ExStyle		= -20
+		UserData	= -21
+		ID			= -12
 
 	[StructLayout(LayoutKind.Sequential)] public struct POINT:
 		public X as int
@@ -120,15 +120,15 @@ abstract class API():
 		pass
 # -------------------- #
 abstract class Δ(API):
-	static final name			= "Shootdøwn"
 	static final postXP			= Environment.OSVersion.Version.Major >= 6
-	static final win_title		= "💀|$name|💀"
-	static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
-	static final assembly		= Reflection.Assembly.GetExecutingAssembly()
 	static final nil			= IntPtr.Zero
 	static final gen_md5		= Security.Cryptography.MD5Cng()
 	static final is_admin = WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)
-
+	public static final name			= "Shootdøwn"
+	public static final win_title		= "💀|$name|💀"
+	public static final assembly_icon	= Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+	public static final assembly		= Reflection.Assembly.GetExecutingAssembly()
+	
 	# --Methods goes here.
 	[Extension] static def either[of T, T2](val as T, false_val as T2, true_val as T2):
 		if val: return true_val
@@ -246,8 +246,8 @@ abstract class Observable(Δ):
 		return "$x"
 
 	def load(path as string):
-		try:
-			if File.Exists(path): json = File.ReadAllText(path)
+		try: 
+			json = File.ReadAllText(path) if File.Exists(path)
 		except ex: ex.errorbox()
 		return sync()
 
@@ -418,6 +418,37 @@ class WinInfo(Δ):
 	static none:
 		get: return List of WinInfo()
 # -------------------- #
+class Decal(AuxWindow):
+	final timer			= Timer(Enabled: true, Interval: 2000, Tick: {tick})
+	static final atlas	= Bitmap(Δ.find_res("decal.png"))
+	static final dim	= Point(5, 2)
+	static final rnd	= Random()
+	private final img	= PictureBox(Width: atlas.Width/ 1.0 /dim.X, Height: atlas.Height/ 1.0 /dim.Y)
+
+	def constructor(origin as Point):
+		# Primary setup operations.
+		TopMost, ShowInTaskbar, FormBorderStyle = true, false, FormBorderStyle.None
+		StartPosition, Size						= FormStartPosition.Manual, Size(140, 140)
+		# Backgtound setup.
+		img.Image		= atlas.Clone(
+			Rectangle(img.Width * rnd.Next(dim.X), img.Height * rnd.Next(dim.Y), img.Width, img.Height),
+			atlas.PixelFormat)
+		img.Location	= Point((Width - img.Width) / 2, (Height - img.Height) / 2)
+		Controls.Add(img)
+		# Finalization.
+		init(1).color_key	= BackColor = Color.DarkSlateGray
+		Location			= Point(origin.X - Width / 2, origin.Y - Height / 2)
+		Show()
+
+	def tick():
+		timer.Interval = 25
+		if α > (d = 0.05): α -= d
+		else: destroy()
+
+	def destroy():
+		timer.Dispose()
+		Dispose()
+# -------------------- #
 class InspectorWin(AuxWindow):
 	final host as Shooter
 	final info = Collections.Generic.Dictionary[of string, Label]()
@@ -457,53 +488,36 @@ class InspectorWin(AuxWindow):
 	checkout:
 		get: return join(info.Values.Select({x|x.Text}), ' | ')
 # -------------------- #
-class Decal(AuxWindow):
-	final timer			= Timer(Enabled: true, Interval: 2000, Tick: {tick})
-	static final atlas	= Bitmap(Δ.find_res("decal.png"))
-	static final dim	= Point(5, 2)
-	static final rnd	= Random()
-	private final img	= PictureBox(Width: atlas.Width/ 1.0 /dim.X, Height: atlas.Height/ 1.0 /dim.Y)
-
-	def constructor(origin as Point):
-		# Primary setup operations.
-		TopMost, ShowInTaskbar, FormBorderStyle = true, false, FormBorderStyle.None
-		StartPosition, Size						= FormStartPosition.Manual, Size(140, 140)
-		# Backgtound setup.
-		img.Image		= atlas.Clone(
-			Rectangle(img.Width * rnd.Next(dim.X), img.Height * rnd.Next(dim.Y), img.Width, img.Height),
-			atlas.PixelFormat)
-		img.Location	= Point((Width - img.Width) / 2, (Height - img.Height) / 2)
-		Controls.Add(img)
-		# Finalization.
-		init(1).color_key	= BackColor = Color.DarkSlateGray
-		Location			= Point(origin.X - Width / 2, origin.Y - Height / 2)
-		Show()
-
-	def tick():
-		timer.Interval = 25
-		if α > (d = 0.05): α -= d
-		else: destroy()
-
-	def destroy():
-		timer.Dispose()
-		Dispose()
-# -------------------- #
 class AutoKillerWin(Form):
 	# TODO: Implement me, damn it.
 	final host as Shooter
+	final flow		= FlowLayoutPanel(FlowDirection: FlowDirection.TopDown, AutoSize: true, Size: Size(0, 0),
+		AutoSizeMode: AutoSizeMode.GrowAndShrink, Margin: Padding(0, 0, 0, 0))
+	final listing	= ListView(Margin: Padding(5, 5, 5, 5), BackColor: Color.FromArgb(20,20,20), 
+		BorderStyle: BorderStyle.FixedSingle)
 
 	# --Methods goes here.
 	def constructor(base as Shooter):
 		if base.autokill_win: base.autokill_win.Activate(); return
 		super()
-		host = base
+		host					= base
+		Text, Icon, BackColor	= "|$(host.name)| =auto-kill", host.assembly_icon, Color.FromArgb(30,30,30)
+		StartPosition			= FormStartPosition.CenterScreen
+		DoubleBuffered			= true
+		# Layout controls.
+		Controls.Add(flow)
+		flow.Controls.Add(listing)
+		for name in "💀 title", "💀 exe", "💀 md5":
+			btn = Button(Text: name, FlatStyle: FlatStyle.Flat, ForeColor: Color.AntiqueWhite)
 		# Finalization.
 		host.autokill_win = self
 		Closed += {destroy}
 		Show()
 
 	def feedback():
-		pass
+		for cat in host.cfg.autokill:
+			for desc as string in cat.Value:
+				listing.Items.Add(desc)
 
 	def destroy():
 		host.autokill_win = null
@@ -513,14 +527,14 @@ class AutoKillerWin(Form):
 class Shooter(Δ):
 	public autokill_win as AutoKillerWin
 	final me			= ProcInfo.current
-	final cfg			= Config().load(cfg_file) as Config
 	final icon			= NotifyIcon(Visible: true, Icon: assembly_icon, ContextMenu: ContextMenu())
 	final ak_timer		= Timer(Enabled: true, Interval: 3000, Tick: {shootdøwn(lookup_doomed())})
 	final upd_timer		= Timer(Enabled: true, Interval: 100, Tick: {update})
 	final msg_handler	= WM_Receiver(WM: {e as Message|shootdøwn() if e.Msg == 0x0312})
 	final bang			= Media.SoundPlayer("shoot.wav".find_res())
-	final necrologue	= OrderedDictionary(cfg.max_necro)
 	final analyzer		= InspectorWin(self)
+	public final cfg	= Config().load(cfg_file) as Config
+	final necrologue	= OrderedDictionary(cfg.max_necro)
 	public final locker	= "!$name!".try_lock()
 	static final cfg_file = "$name.json"
 	struct stat():
@@ -537,7 +551,7 @@ class Shooter(Δ):
 
 	# --Methods goes here.
 	def constructor():
-		return unless locker or destroy()
+		return unless locker or not destroy()
 		icon.MouseDown += {setup_menu}
 		msg_handler.Handle.RegisterHotKey(0, KeyModifier.Alt | KeyModifier.Shift, Keys.F4)
 		update()
@@ -576,7 +590,7 @@ class Shooter(Δ):
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.06", "*" * 19,
+			"$name v0.061", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n')\
 			.msgbox(MessageBoxIcon.Information)})
@@ -611,13 +625,20 @@ class Shooter(Δ):
 		AutoKillerWin(self)
 
 	# Overloads.[
-	def shootdøwn(proc as ProcInfo):
+	def shootdøwn(proc as ProcInfo, positioned as bool):
 		return if proc == me or proc.pid == nil # Suicide is a mortal sin.
 		try:
 			bang.Play() unless cfg.muffled
+			if positioned and not cfg.hide_holes:
+				Decal(Cursor.Position) 
+				Application.DoEvents()
+				Threading.Thread.Sleep(100)
 			necrologue.upcount(proc.destroy()).cycle(cfg.max_necro)
 			return stat.victims++ >= 0			
 		except ex: stat.errors++; ex.errorbox("●● [pid=$(proc.pid), module='$proc']")
+
+	def shootdøwn(proc as ProcInfo):
+		return shootdøwn(proc as ProcInfo, false)
 
 	def shootdøwn(victim as uint):
 		return shootdøwn(WinInfo(victim.ptr())) if victim
@@ -629,9 +650,7 @@ class Shooter(Δ):
 		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
 
 	def shootdøwn():
-		if result = shootdøwn(target):
-			Decal(Cursor.Position) unless cfg.hide_holes
-			return result
+		return shootdøwn(target, true)
 
 	def shootdøwn_pid(pid as uint):
 		return shootdøwn(ProcInfo(pid.ptr())) if pid
