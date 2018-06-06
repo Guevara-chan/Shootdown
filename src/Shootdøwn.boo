@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.061
+# Shootdøwn windows destroyer v0.062
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -533,10 +533,11 @@ class Shooter(Δ):
 	final msg_handler	= WM_Receiver(WM: {e as Message|shootdøwn() if e.Msg == 0x0312})
 	final bang			= Media.SoundPlayer("shoot.wav".find_res())
 	final analyzer		= InspectorWin(self)
-	public final cfg	= Config().load(cfg_file) as Config
-	final necrologue	= OrderedDictionary(cfg.max_necro)
-	public final locker	= "!$name!".try_lock()
-	static final cfg_file = "$name.json"
+	public final locker		= "!$name!".try_lock()
+	public final work_dir	= assembly.IsDynamic.either(Path.GetDirectoryName(me.exe), Directory.GetCurrentDirectory())
+	public final cfg_file	= Path.Combine(work_dir, "$name.json")
+	public final cfg		= Config().load(cfg_file) as Config
+	final necrologue		= OrderedDictionary(cfg.max_necro)
 	struct stat():
 		static startup	= DateTime.Now
 		static victims	= 0
@@ -590,15 +591,16 @@ class Shooter(Δ):
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.061", "*" * 19,
+			"$name v0.062", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
-			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n')\
-			.msgbox(MessageBoxIcon.Information)})
+			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n'
+			).msgbox(MessageBoxIcon.Information)})
 		items.Add("-")
 		# Settings block.
-		items.Add("Muffle sounds",				{cfg.muffled.invert()}		).Checked = cfg.muffled
-		items.Add("Hide bullet holes",			{cfg.hide_holes.invert()}	).Checked = cfg.hide_holes
-		items.Add("Inspect on [r]Alt+Shift",	{cfg.inspect_on.invert()}	).Checked = cfg.inspect_on
+		sub = items.Add("Configure").MenuItems
+		sub.Add("Muffle sounds",			{cfg.muffled.invert()}		).Checked = cfg.muffled
+		sub.Add("Hide bullet holes",		{cfg.hide_holes.invert()}	).Checked = cfg.hide_holes
+		sub.Add("Inspect on [r]Alt+Shift",	{cfg.inspect_on.invert()}	).Checked = cfg.inspect_on
 		items.Add("Autosave configuration",	
 						{File.Delete(cfg_file) unless cfg.autosave.invert()}).Checked = cfg.autosave
 		items.Add("-")
