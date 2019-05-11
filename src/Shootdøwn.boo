@@ -645,10 +645,10 @@ class Shooter(Δ):
 	def shootdøwn(victim as uint):
 		return shootdøwn(WinInfo(victim.ptr())) if victim
 
-	def shootdøwn(victims as IEnumerable of ProcInfo):
+	def shootdøwn(victims as ProcInfo*):
 		for x in victims: shootdøwn(x)
 
-	def shootdøwn(victims as IEnumerable of WinInfo):
+	def shootdøwn(victims as WinInfo*):
 		for x in victims.Select({x|x.owner}).Distinct(): shootdøwn(x)
 
 	def shootdøwn():
