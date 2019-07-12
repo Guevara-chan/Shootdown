@@ -598,7 +598,7 @@ class Shooter(Δ):
 		items.Clear()
 		# Settings and info.
 		items.Add("About...", {join((
-			"$name v0.062", "*" * 19,
+			"$name v0.063", "*" * 19,
 			"Uptime:: $((DateTime.Now - stat.startup).ToString('d\\ \\d\\a\\y\\(\\s\\)\\ \\~\\ h\\:mm\\:ss'))",
 			"Processess destroyed:: $(stat.victims)", "Termination errors:: $(stat.errors)"), '\n'
 			).msgbox(MessageBoxIcon.Information)})
