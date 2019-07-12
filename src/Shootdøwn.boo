@@ -1,5 +1,5 @@
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# Shootdøwn windows destroyer v0.062
+# Shootdøwn windows destroyer v0.063
 # Developed in 2017 by Guevara-chan.
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -99,6 +99,12 @@ abstract class API():
 	[DllImport("user32.dll")] 
 	[Extension]	static def GetLayeredWindowAttributes(hwnd as IntPtr, ref crKey as uint, ref bAlpha as byte, 
 		ref dwFlags as int) as bool:
+		pass
+	[DllImport("user32.dll")]
+	[Extension]	static def HungWindowFromGhostWindow(hwnd as IntPtr) as IntPtr:
+		pass
+	[DllImport("user32.dll")]
+	[Extension]	static def IsHungAppWindow(hwnd as IntPtr) as bool:
 		pass
 	[DllImport("kernel32.dll")]
 	[Extension]	static def OpenProcess(Access as ProcessAccess, bInheritHnd as bool, Id as IntPtr) as IntPtr:
@@ -352,6 +358,7 @@ class ProcInfo(Δ):
 
 	[Extension]	static def from_win(win_handle as IntPtr):
 		pid as IntPtr
+		win_handle = win_handle.HungWindowFromGhostWindow() if win_handle.IsHungAppWindow()
 		win_handle.GetWindowThreadProcessId(pid)
 		return ProcInfo(pid)
 
