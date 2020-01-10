@@ -14,7 +14,7 @@ Just press _Alt+Shift+F4_ any time to instantly send that thing under your mouse
 - Extensive history list with additional post-termination options: reraise process, delete exe, open in explorer.
 
 # 「Reassembling」
-__Shootdøwn__ was written entirelly in [Boo v0.9.7.0](https://github.com/boo-lang/boo) with auxiliary `release.cmd` script provided in _Shell_.  
+__Shootdøwn__ was written entirelly in [Boo v0.9.7.0](https://github.com/boo-lang/boo) with auxiliary build script provided in _Shell_.  
 It requires [ILMerge](https://github.com/Microsoft/ILMerge) to be installed and properly referenced in _release.cmd_ for recompilation.
 
 # 「Brief samples of interfacing」
